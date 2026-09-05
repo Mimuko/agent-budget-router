@@ -26,14 +26,18 @@ def test_gitignore_fnmatch():
     assert ignored_by_gitignore("foo.pyc", ["*.pyc"])
 
 
-def test_scan_with_hint_limits_files(tmp_path):
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "target.py").write_text("x = 1\n" * 10, encoding="utf-8")
-    (tmp_path / "src" / "other.py").write_text("y = 2\n" * 100, encoding="utf-8")
-    result = scan_workspace(tmp_path, hints=["src/target.py"])
-    paths = [c["path"] for c in result["candidate_files"]]
-    assert "src/target.py" in paths
-    assert "src/other.py" not in paths
+def test_scan_with_hint_limits_files():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "src").mkdir()
+        (root / "src" / "target.py").write_text("x = 1\n" * 10, encoding="utf-8")
+        (root / "src" / "other.py").write_text("y = 2\n" * 100, encoding="utf-8")
+        result = scan_workspace(root, hints=["src/target.py"])
+        paths = [c["path"] for c in result["candidate_files"]]
+        assert "src/target.py" in paths
+        assert "src/other.py" not in paths
 
 
 def test_relevance_score_prefers_hints():
