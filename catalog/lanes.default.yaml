@@ -1,0 +1,24 @@
+meta:
+  updated: "2026-09-05"
+  compatible_with: "mimu-core routing-policy §7"
+
+lanes:
+  implementer:
+    model: composer-2.5
+    speed: fast
+    role: "Clear-spec implementation, lint, small-to-medium fixes"
+
+  analyst-planner:
+    model: cursor-grok-4.6
+    effort: high
+    speed: standard
+    role: "Investigation, requirements, planning, architecture judgment"
+
+  cross-reviewer:
+    model: gpt-5.6-sol
+    speed: standard
+    role: "Important change review, requirements alignment (different model, readonly)"
+
+  auto-lane:
+    model: null
+    role: "Trivial, low-risk changes only; parent model dependent"

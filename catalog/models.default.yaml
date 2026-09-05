@@ -1,0 +1,27 @@
+meta:
+  updated: "2026-09-05"
+  source: "https://cursor.com/docs/models"
+  note: "Pricing fields are null until verified from official docs. Do not invent rates."
+
+models:
+  composer-2.5:
+    display_name: "Composer 2.5"
+    pool: cursor_models
+    speed_modes: [fast, standard]
+    input_per_mtok: null
+    output_per_mtok: null
+
+  cursor-grok-4.6:
+    display_name: "Cursor Grok 4.6"
+    pool: cursor_models
+    effort_levels: [low, medium, high, xhigh]
+    speed_modes: [standard, fast]
+    input_per_mtok: null
+    output_per_mtok: null
+
+  gpt-5.6-sol:
+    display_name: "GPT-5.6 Sol"
+    pool: other_models
+    speed_modes: [standard, fast]
+    input_per_mtok: null
+    output_per_mtok: null

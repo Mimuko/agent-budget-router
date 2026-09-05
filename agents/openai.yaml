@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Budget Router"
+  short_description: "Estimate agent token usage and recommend Go / Split / Defer before large coding tasks"
+  default_prompt: "Use $agent-budget-router to estimate this task before handing it to a coding agent. Return Go / Split / Defer with expected context and recommended lanes."
