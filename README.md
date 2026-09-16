@@ -44,7 +44,7 @@ likely to *read and re-read*, not your whole workspace.
 
 ## Works well with
 
-- [mimu-core](https://github.com/Mimuko/agent-plugins) routing-policy §7 (optional)
+- [mimu-core](https://github.com/Mimuko/agent-plugins) routing-policy §7（役割）/ §8（Cursor Adapter, optional）
 - Cursor subagents with pinned `model` + `effort` / `speed` in catalog
 
 ## Quick start

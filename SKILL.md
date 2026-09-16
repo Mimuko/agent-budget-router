@@ -23,7 +23,7 @@ Repository size  ≠  Expected agent context
 ## いつ使うか
 
 - 大規模・初回・予算不安があるタスクを Agent に渡す**前**
-- mimu-core routing-policy §7 の Lane 委譲**前**（任意）
+- mimu-core routing-policy §7 の役割委譲**前**（任意）。Cursor Lane ピンは §8
 - 「このまま投げたら焼けるか？」を人間が判断したいとき
 
 ## やること / やらないこと
@@ -51,7 +51,7 @@ python <skill>/scripts/estimate.py "タスク説明" \
 
 5. [references/output-format.md](references/output-format.md) のテンプレで人間向けレポートを返す
 6. Verdict に従い、人間が Go / Split / Defer を決定
-7. **GO または Split 後**に routing-policy §7 の Lane 委譲へ進む
+7. **GO または Split 後**に routing-policy §7 の役割実行へ進む（Cursor では §8 Lane 委譲）
 
 ## Verdict の扱い
 
@@ -68,7 +68,7 @@ python <skill>/scripts/estimate.py "タスク説明" \
 | レイヤー | 担当 | 質問 |
 |:---------|:-----|:-----|
 | **agent-budget-router** | 投入前 | どれくらい食う？予算内？分割すべき？ |
-| **routing-policy §7** | 投入後 | どの Lane / subagent に任せる？ |
+| **routing-policy §7 / §8** | 投入後 | どの役割（§7）／Cursor Lane（§8）に任せる？ |
 | **Skills** | 実行中 | 手順・出力・ガードレール |
 
 ## カタログ
