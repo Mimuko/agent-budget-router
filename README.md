@@ -49,7 +49,159 @@ likely to *read and re-read*, not your whole workspace.
 - [mimu-core](https://github.com/Mimuko/agent-plugins) routing-policy §7 (optional)
 - Cursor subagents with pinned `model` + `effort` / `speed` in catalog
 
-## Quick start
+## 使い方（通常運用）
+
+日常利用では `compare_runs.py` ではなく `abr.py` を使う。基本フローは
+`configure（初回のみ）→ route → 実行 → finish → stats`。
+
+### 0. 前提
+
+- Python 3.10 以降
+- Codex の利用枠を自動取得する場合は、`codex` コマンドが利用でき、ChatGPTアカウントでログイン済みであること
+- コマンドは `agent-budget-router` ディレクトリをカレントディレクトリとして実行する
+
+```powershell
+cd agent-budget-router
+```
+
+### 1. Cursor API料金を設定する（初回・料金変更時のみ）
+
+Cursor → OpenAI API の推定額も比較する場合、そのモデルに現在適用される
+1M token当たりの料金を登録する。Codexだけを判定する場合、この手順は省略できる。
+
+```powershell
+python scripts/abr.py configure `
+  --input-rate 4 `
+  --cached-input-rate 0.4 `
+  --output-rate 20 `
+  --cached-input-ratio 0.2
+```
+
+料金は変動するため、利用時点の公式料金を指定する。上記の数値は入力例であり、
+既定料金ではない。
+
+### 2. タスク実行前にプリフライトする
+
+通常の依頼文をそのまま渡す。
+
+```powershell
+python scripts/abr.py route "repo全体をレビューしてIssue候補を作る"
+```
+
+主な出力:
+
+```text
+Estimated task class: repository_review
+Estimated input: 95k-636k tokens
+Estimated output: 8k-25k tokens
+Estimated Codex allowance impact: 3-5% (LOW)
+Current Codex usage (measured): 29%
+Remaining: 71%
+
+Historical data
+Similar tasks: 0
+Median elapsed: no data
+Accepted without revision: 0 / 0
+
+Suggested execution: CODEX
+Budget gate: CONFIRM / ASK_USER
+Preflight ID: 5615d2a3-...
+```
+
+推定値と実測値は区別して表示する。`Current Codex usage` はCodexアカウントから
+取得した実測値、`Estimated Codex allowance impact` は実行前の推定レンジ。
+
+ゲートの意味:
+
+| Gate | Action | 動作 |
+|---|---|---|
+| `NORMAL` | `AUTO_EXECUTE` | 低消費・残量十分・履歴精度が高い。統合エージェントはそのまま実行可能 |
+| `CONFIRM` | `ASK_USER` | 中程度の消費、または履歴不足。実行先を確認 |
+| `WARN` | `SUGGEST_ALTERNATIVE` | 高消費・残量不足・現在値取得不可。代替経路を提示して強く確認 |
+
+対話端末では `CONFIRM` / `WARN` のとき、次の選択肢が表示される。
+
+```text
+Proceed? [Y] Codex / [C] Cursor API / [N] Cancel:
+```
+
+CIやエージェント統合から呼び出す場合は、対話を止めてJSONを受け取る。
+
+```powershell
+python scripts/abr.py route "タスク内容" --non-interactive --json
+```
+
+統合側は `gate.action` を確認してからタスクを起動する。`abr.py` 自体はCodexや
+Cursorのタスク実行ランチャーではない。
+
+### 3. 選択した経路でタスクを実行する
+
+表示された `Preflight ID` を控え、CodexまたはCursorでタスクを実行する。
+このIDにはプロンプトやソースコードは保存されない。
+
+### 4. 実行後にプリフライトを閉じる
+
+実行後、同じ `Preflight ID` を指定する。これによりCodex利用率のafter snapshotを
+取得し、beforeとの差分と実行結果を履歴化する。
+
+```powershell
+python scripts/abr.py finish 5615d2a3-... `
+  --route codex `
+  --completion completed `
+  --acceptance satisfied `
+  --elapsed-minutes 13 `
+  --tests passed `
+  --lint passed `
+  --build passed `
+  --human-revisions 0 `
+  --parallel-activity none
+```
+
+`--parallel-activity` の指定:
+
+| 値 | 意味 | 推定への利用 |
+|---|---|---|
+| `none` | 同時間帯に他のCodex実行がない | `HIGH` attributionとして次回推定に利用 |
+| `detected` | 他のCodex実行があった | アカウント全体の参考値としてのみ保存 |
+| `unknown` | 並行実行の有無を確認できない | アカウント全体の参考値としてのみ保存 |
+
+判断できない場合は既定の `unknown` のままにする。同じPreflight IDを二重に
+`finish` することはできない。
+
+### 5. 履歴を確認する
+
+```powershell
+python scripts/abr.py stats
+```
+
+タスク種別・経路ごとに実行件数、コスト中央値、所要時間中央値、受入率を表示する。
+タスク帰属可能なCodex利用率差分は、同種タスク3件で `MEDIUM`、6件で `HIGH`
+confidenceとなり、以降の allowance impact 推定レンジへ反映される。
+
+### 補助コマンド
+
+現在のCodex利用枠とグローバル使用量だけをスナップショット保存する:
+
+```powershell
+python scripts/abr.py capture-codex
+```
+
+プリフライトを使わず、既存の自動化hookから実行結果だけを記録する:
+
+```powershell
+python scripts/abr.py record `
+  --task-class repository_review `
+  --route codex `
+  --completion completed `
+  --acceptance satisfied `
+  --elapsed-minutes 12 `
+  --tests passed
+```
+
+ローカル状態は `~/.agent-budget-router/` に保存する。プロンプト、会話本文、
+ソースコード、APIキーは保存しない。
+
+## Quick start（従来の見積コマンド）
 
 ### Cursor
 
