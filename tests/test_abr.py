@@ -9,9 +9,11 @@ sys.path.insert(0, str(SCRIPTS))
 
 from abr import (  # noqa: E402
     append_snapshot,
+    budget_gate,
     build_parser,
     cursor_estimated_cost,
     decide_route,
+    estimate_allowance_impact,
     route_stats,
     task_class,
 )
@@ -58,3 +60,47 @@ def test_stats_uses_acceptance_signals_not_subjective_quality():
     stats = route_stats(runs, "small_edit", "codex")
     assert stats["acceptance_rate"] == 0.5
     assert stats["median_elapsed_minutes"] == 12
+    assert stats["accepted_without_revision"] == 1
+
+
+def test_allowance_impact_starts_as_low_confidence_range():
+    impact = estimate_allowance_impact("repository_review", {"attributable_deltas": []})
+    assert impact == {
+        "min_percent_points": 3.0,
+        "max_percent_points": 5.0,
+        "confidence": "LOW",
+        "sample_count": 0,
+        "source": "bootstrap_task_class_prior",
+    }
+
+
+def test_allowance_impact_becomes_high_confidence_after_six_attributable_runs():
+    impact = estimate_allowance_impact(
+        "repository_review", {"attributable_deltas": [3, 4, 3, 5, 4, 4]}
+    )
+    assert impact["confidence"] == "HIGH"
+    assert (impact["min_percent_points"], impact["max_percent_points"]) == (3.0, 5.0)
+
+
+def test_budget_gate_levels():
+    normal = budget_gate(
+        {"max_percent_points": 2, "confidence": "HIGH"}, {"used_percent": 20}
+    )
+    confirm = budget_gate(
+        {"max_percent_points": 4, "confidence": "MEDIUM"}, {"used_percent": 37}
+    )
+    warn = budget_gate(
+        {"max_percent_points": 14, "confidence": "MEDIUM"}, {"used_percent": 81}
+    )
+    assert normal["level"] == "NORMAL"
+    assert confirm["level"] == "CONFIRM"
+    assert warn["level"] == "WARN"
+
+
+def test_budget_gate_warns_when_live_allowance_is_missing():
+    gate = budget_gate({"max_percent_points": 2, "confidence": "HIGH"}, None)
+    assert gate == {
+        "level": "WARN",
+        "action": "SUGGEST_ALTERNATIVE",
+        "reason": "Live Codex allowance is unavailable",
+    }

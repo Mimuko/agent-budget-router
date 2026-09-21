@@ -184,6 +184,18 @@ when plan allowance is available; confidence becomes high after three accepted
 comparable Codex runs. It does not claim that a fixed ChatGPT plan has a zero
 per-task price.
 
+The route result is also a preflight budget gate:
+
+- `NORMAL / AUTO_EXECUTE`: low estimated impact, enough remaining allowance,
+  and high-confidence comparable history.
+- `CONFIRM / ASK_USER`: moderate impact or incomplete calibration.
+- `WARN / SUGGEST_ALTERNATIVE`: high impact, low remaining allowance, or no
+  readable live allowance.
+
+Allowance impact is always shown as a range. Before attributable history
+exists, a conservative task-class prior is marked `LOW` confidence. Three
+attributable runs raise it to `MEDIUM`; six raise it to `HIGH`.
+
 To automatically retain a privacy-safe Codex account snapshot (current plan
 allowance and global token-activity summary), run this before/after a work
 session or from an automation hook:
@@ -194,6 +206,19 @@ python scripts/abr.py capture-codex
 
 The snapshot is global account telemetry, not a per-task attribution. The
 router never silently assigns unrelated concurrent usage to a task.
+
+`route` saves a privacy-safe before snapshot and prints a Preflight ID. Close it
+after execution to capture the after snapshot and observed account delta:
+
+```bash
+python scripts/abr.py finish <preflight-id> \
+  --completion completed --acceptance satisfied --elapsed-minutes 13 \
+  --tests passed --parallel-activity none
+```
+
+Only `--parallel-activity none` produces a high-confidence task-attributable
+delta. `detected` and `unknown` remain account-level observations and are not
+used to calibrate the next task estimate.
 
 For Cursor API cost estimates, configure the current rates once (this writes
 internal local state; you do not create a JSON file):
