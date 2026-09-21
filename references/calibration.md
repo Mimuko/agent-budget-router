@@ -1,6 +1,6 @@
 # Calibration（v2）
 
-将来の実測補正運用。v1 では蓄積のみ。推定への反映は Phase 3。
+将来の実測補正運用。v1 では蓄積のみ。推定への反映は Phase 3。MY-180 の経路別コスト比較は [measurement-schema.md](measurement-schema.md) を使い、ここには context の補正値だけを置く。
 
 ## ローカル蓄積
 
@@ -33,3 +33,4 @@ N 件（目安 10+）蓄積後、タスク種別ごとの平均 ratio をレポ�
 - **個人ローカル**が既定
 - 共有は opt-in（チームで calibration を共有する場合は別途合意）
 - 実測値は請求 API ではなく、ユーザーが観測した usage を手入力でよい（v2）
+- Cursor API と Codex の USD 比較は、Codexが追加クレジットを使った実行だけで行う。プラン内枠は残利用枠の判断に使い、恣意的なタスク単価に変換しない
