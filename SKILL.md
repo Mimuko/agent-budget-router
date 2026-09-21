@@ -7,7 +7,7 @@ description: 大きな Agent タスク投入前に、期待コンテキスト・
 
 > **Estimate before you agent.**
 
-大きなタスクを Agent に投げる前に、**トークン見積・複雑度・推奨 Lane / モデル・予算リスク**を返す。単なるカウンターではなく、**投入判断（Go / Split / Defer）まで支援する**。
+大きなタスクを Agent に投げる前に、**トークン見積・複雑度・推奨 Lane / モデル・予算リスク**を返す。単なるカウンターではなく、**投入判断（Go / Split / Defer）まで支援する**。実行後は Cursor → OpenAI API と Codex の観測値を比較し、次回の実行先判断も支援する。
 
 正本: [references/estimation-rules.md](references/estimation-rules.md)  
 出力形式: [references/output-format.md](references/output-format.md)
@@ -52,6 +52,20 @@ python <skill>/scripts/estimate.py "タスク説明" \
 5. [references/output-format.md](references/output-format.md) のテンプレで人間向けレポートを返す
 6. Verdict に従い、人間が Go / Split / Defer を決定
 7. **GO または Split 後**に routing-policy §7 の役割実行へ進む（Cursor では §8 Lane 委譲）
+
+## 実測コスト比較（MY-180）
+
+同一タスクを両方で完了させたあと、[references/measurement-schema.md](references/measurement-schema.md) の JSON を記録して比較する。
+
+```bash
+python <skill>/scripts/compare_runs.py \
+  --cursor <cursor-api-measurement.json> \
+  --codex <codex-measurement.json>
+```
+
+- Cursor API はダッシュボードの `api_cost_usd` を正本にする。未取得時だけ、その時点の料金と input / cached input / output token から計算する。
+- Codexのプラン内利用枠はタスクごとの USD に配賦しない。`included_plan` は残利用枠の判断用、`additional_credit` のみ API 実費と直接比較する。
+- 同一 task、双方完了、品質差 0.5 点以内、両方の実費あり、のときだけ `CURSOR_API` または `CODEX` を推薦する。それ以外は人間判断へ戻す。
 
 ## Verdict の扱い
 

@@ -35,6 +35,7 @@ likely to *read and re-read*, not your whole workspace.
 - Returns **Go / Split / Defer** verdict
 - Recommends phased execution (plan → implement → review)
 - Separates model catalog from estimation logic
+- Compares observed Cursor → OpenAI API and Codex runs without inventing a per-task price for included plan allowance
 
 ## What it does NOT do
 
@@ -146,7 +147,24 @@ Details: [references/estimation-rules.md](references/estimation-rules.md)
 ```bash
 python -m pytest tests/
 python scripts/estimate.py --task-file examples/small-fix.md
+python scripts/compare_runs.py --cursor examples/measurements/cursor-api.json \
+  --codex examples/measurements/codex-included-plan.json
 ```
+
+## Observed cost comparison
+
+After running the same task through both routes, record only the observed usage,
+completion, elapsed time, and quality score. Then run `compare_runs.py`.
+
+- Cursor API: use the observed `api_cost_usd`; if unavailable, provide the
+  observed input / cached-input / output tokens and the rates that applied then.
+- Codex: record whether the run used included plan allowance or additional
+  credits. Included allowance is not treated as a zero-dollar task price.
+- A route recommendation is emitted only when both tasks completed at comparable
+  quality and both marginal USD values are available.
+
+See [measurement schema](references/measurement-schema.md) and runnable
+[examples](examples/measurements/).
 
 ## License
 
