@@ -44,9 +44,15 @@ def test_routes_to_lower_additional_cost_for_equivalent_quality():
     assert result["recommendation"] == "CODEX"
 
 
-def test_included_plan_is_not_ranked_as_zero_cost():
+def test_included_plan_recommends_codex_without_claiming_a_zero_task_price():
     result = compare(cursor_run(), codex_run(billing_mode="included_plan", additional_credit_usd=None))
-    assert result["recommendation"] == "MANUAL_REVIEW"
+    assert result["recommendation"] == "CODEX"
+    assert "fixed plan cost is not allocated" in result["notes"][0]
+
+
+def test_quality_score_is_optional():
+    result = compare(cursor_run(quality_score=None), codex_run(quality_score=None))
+    assert result["recommendation"] == "CODEX"
 
 
 def test_calculates_cursor_cost_from_usage_and_supplied_rates():

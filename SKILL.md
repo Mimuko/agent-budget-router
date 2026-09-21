@@ -53,7 +53,39 @@ python <skill>/scripts/estimate.py "タスク説明" \
 6. Verdict に従い、人間が Go / Split / Defer を決定
 7. **GO または Split 後**に routing-policy §7 の Lane 委譲へ進む
 
-## 実測コスト比較（MY-180）
+## 日常のルーティング（MY-180）
+
+通常は `abr route` を使う。初期の同一タスク比較だけ `compare_runs.py` を使い、以後はコンパクトな実行履歴の中央値で判断する。
+
+```bash
+python <skill>/scripts/abr.py route "repo全体をレビューしてIssue候補を作る"
+python <skill>/scripts/abr.py stats
+```
+
+`abr route` は既存の context / output 見積に、Codex App Serverで取得する現在のプラン利用枠とタスク種別ごとの履歴を組み合わせる。Cursor API単価は初回にローカル設定へ登録する。タスクごとのJSON作成は不要で、実行後は以下のように事実だけを記録する。`quality_score` は不要。
+
+```bash
+python <skill>/scripts/abr.py configure \
+  --input-rate <USD/MTok> --cached-input-rate <USD/MTok> --output-rate <USD/MTok>
+```
+
+```bash
+python <skill>/scripts/abr.py record --task-class repository_review \
+  --route codex --completion completed --acceptance satisfied \
+  --elapsed-minutes 12 --tests passed --lint passed --build passed
+```
+
+保存先は既定で `~/.agent-budget-router/runs.jsonl`。プロンプト、会話、ソースコード、認証情報は保存しない。
+
+Codexの現在の利用枠とグローバル使用量は、手入力なしで取得・保存できる。
+
+```bash
+python <skill>/scripts/abr.py capture-codex
+```
+
+これはアカウント全体のスナップショットであり、同時実行分を特定タスクに誤配賦しない。タスク完了・テスト結果などの事実は実行元のhookから `abr record` を呼ぶ運用を想定する。
+
+## 同一タスクの比較（分析用）
 
 同一タスクを両方で完了させたあと、[references/measurement-schema.md](references/measurement-schema.md) の JSON を記録して比較する。
 
@@ -64,8 +96,8 @@ python <skill>/scripts/compare_runs.py \
 ```
 
 - Cursor API はダッシュボードの `api_cost_usd` を正本にする。未取得時だけ、その時点の料金と input / cached input / output token から計算する。
-- Codexのプラン内利用枠はタスクごとの USD に配賦しない。`included_plan` は残利用枠の判断用、`additional_credit` のみ API 実費と直接比較する。
-- 同一 task、双方完了、品質差 0.5 点以内、両方の実費あり、のときだけ `CURSOR_API` または `CODEX` を推薦する。それ以外は人間判断へ戻す。
+- Codexのプラン内利用枠はタスクごとの USD に配賦しない。`included_plan` は直接費としてCodex優位だが固定費は未配賦、として扱う。
+- `quality_score` は任意。記録する場合だけ品質差 0.5 点以内を比較条件にし、日常運用では tests / lint / build / acceptance / human revisions を優先する。
 
 ## Verdict の扱い
 
