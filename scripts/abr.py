@@ -16,6 +16,7 @@ import statistics
 import subprocess
 import sys
 import threading
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,14 @@ from estimate import estimate
 
 
 DEFAULT_STATE_DIR = Path.home() / ".agent-budget-router"
+
+BOOTSTRAP_ALLOWANCE_IMPACT: dict[str, tuple[float, float]] = {
+    "small_edit": (0.5, 2.0),
+    "feature_build": (2.0, 4.0),
+    "repository_review": (3.0, 5.0),
+    "cross_cutting": (4.0, 8.0),
+    "large_refactor": (8.0, 14.0),
+}
 
 
 def state_paths(state_dir: Path) -> tuple[Path, Path]:
@@ -89,13 +98,24 @@ def route_stats(runs: list[dict[str, Any]], kind: str, route: str) -> dict[str, 
     relevant = [r for r in runs if r.get("task_class") == kind and r.get("route") == route]
     completed = [r for r in relevant if r.get("completion") == "completed"]
     accepted = [r for r in completed if r.get("acceptance") == "satisfied"]
+    accepted_without_revision = [
+        r for r in accepted if r.get("human_revisions") in (0, None)
+    ]
+    attributable_deltas = [
+        float(r["observed_account_delta_points"])
+        for r in completed
+        if r.get("attribution_confidence") == "HIGH"
+        and isinstance(r.get("observed_account_delta_points"), (int, float))
+    ]
     return {
         "runs": len(relevant),
         "completed": len(completed),
         "acceptance_rate": None if not completed else round(len(accepted) / len(completed), 2),
+        "accepted_without_revision": len(accepted_without_revision),
         "median_cost_usd": median([float(r["cost_usd"]) for r in completed if isinstance(r.get("cost_usd"), (int, float))]),
         "median_elapsed_minutes": median([float(r["elapsed_minutes"]) for r in completed if isinstance(r.get("elapsed_minutes"), (int, float))]),
         "median_credits": median([float(r["credit_units"]) for r in completed if isinstance(r.get("credit_units"), (int, float))]),
+        "attributable_deltas": attributable_deltas,
     }
 
 
@@ -177,6 +197,64 @@ def cursor_estimated_cost(result: dict[str, Any], config: dict[str, Any]) -> flo
     return round(((context - cached) * input_rate + cached * cached_rate + generation * output_rate) / 1_000_000, 4)
 
 
+def estimate_allowance_impact(kind: str, codex_history: dict[str, Any]) -> dict[str, Any]:
+    deltas = sorted(codex_history.get("attributable_deltas") or [])
+    if deltas:
+        if len(deltas) == 1:
+            low, high = max(0.0, deltas[0] - 1), deltas[0] + 1
+        else:
+            low, high = deltas[0], deltas[-1]
+        confidence = "HIGH" if len(deltas) >= 6 else "MEDIUM" if len(deltas) >= 3 else "LOW"
+        source = "historical_attributable_runs"
+    else:
+        low, high = BOOTSTRAP_ALLOWANCE_IMPACT.get(kind, (4.0, 10.0))
+        confidence = "LOW"
+        source = "bootstrap_task_class_prior"
+    return {
+        "min_percent_points": round(low, 1),
+        "max_percent_points": round(high, 1),
+        "confidence": confidence,
+        "sample_count": len(deltas),
+        "source": source,
+    }
+
+
+def budget_gate(impact: dict[str, Any], codex: dict[str, Any] | None) -> dict[str, str]:
+    used = codex.get("used_percent") if codex else None
+    if not isinstance(used, (int, float)):
+        return {"level": "WARN", "action": "SUGGEST_ALTERNATIVE", "reason": "Live Codex allowance is unavailable"}
+    remaining = 100 - float(used)
+    high = float(impact["max_percent_points"])
+    confidence = impact["confidence"]
+    if remaining <= 20 or high >= 10 or high >= remaining * 0.5:
+        return {"level": "WARN", "action": "SUGGEST_ALTERNATIVE", "reason": "Estimated usage is large relative to remaining allowance"}
+    if high <= 3 and remaining >= 40 and confidence == "HIGH":
+        return {"level": "NORMAL", "action": "AUTO_EXECUTE", "reason": "Low estimated usage, sufficient allowance, and high-confidence history"}
+    return {"level": "CONFIRM", "action": "ASK_USER", "reason": "Confirmation is appropriate for this estimate or confidence level"}
+
+
+def append_preflight(state_dir: Path, payload: dict[str, Any]) -> str:
+    preflight_id = str(uuid.uuid4())
+    path = state_dir / "preflights.jsonl"
+    append_run(path, {
+        "preflight_id": preflight_id,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "task_class": payload["task_class"],
+        "suggested_execution": payload["suggested_execution"],
+        "gate": payload["gate"],
+        "codex_before": payload["codex"]["allowance"],
+        "estimated_allowance_impact": payload["estimated_allowance_impact"],
+    })
+    return preflight_id
+
+
+def find_preflight(state_dir: Path, preflight_id: str) -> dict[str, Any] | None:
+    for item in reversed(read_runs(state_dir / "preflights.jsonl")):
+        if item.get("preflight_id") == preflight_id:
+            return item
+    return None
+
+
 def decide_route(cursor_cost: float | None, codex: dict[str, Any] | None, cursor: dict[str, Any], codex_history: dict[str, Any]) -> tuple[str, str, list[str]]:
     notes: list[str] = []
     if codex and codex.get("available"):
@@ -209,6 +287,8 @@ def command_route(args: argparse.Namespace) -> int:
     codex_history = route_stats(runs, kind, "codex")
     cursor_cost = cursor_estimated_cost(result, config)
     recommendation, confidence, notes = decide_route(cursor_cost, codex, cursor_history, codex_history)
+    impact = estimate_allowance_impact(kind, codex_history)
+    gate = budget_gate(impact, codex)
     output = {
         "task_class": kind,
         "estimated_context": result["estimated_context"],
@@ -217,22 +297,87 @@ def command_route(args: argparse.Namespace) -> int:
         "codex": {"allowance": codex, "historical": codex_history},
         "suggested_execution": recommendation,
         "confidence": confidence,
+        "estimated_allowance_impact": impact,
+        "gate": gate,
         "reasons": notes,
     }
+    if not args.no_save_preflight:
+        output["preflight_id"] = append_preflight(state_dir, output)
     if args.json:
         print(json.dumps(output, indent=2, ensure_ascii=False))
     else:
         print(f"Estimated task class: {kind}")
-        print(f"Estimated context: {result['estimated_context']['max'] // 1000}k tokens")
-        print(f"Likely output: {result['estimated_generation']['max'] // 1000}k tokens\n")
+        ctx = result["estimated_context"]
+        gen = result["estimated_generation"]
+        print(f"Estimated input: {ctx['min'] // 1000}k-{ctx['max'] // 1000}k tokens")
+        print(f"Estimated output: {gen['min'] // 1000}k-{gen['max'] // 1000}k tokens")
+        print(f"Estimated Codex allowance impact: {impact['min_percent_points']:g}-{impact['max_percent_points']:g}% ({impact['confidence']})")
+        used = codex.get("used_percent") if codex else None
+        print(f"Current Codex usage (measured): {format_percent_value(used)}")
+        print(f"Remaining: {format_percent_value(None if used is None else 100 - used)}\n")
         print(f"Cursor API estimated cost: {format_usd(cursor_cost)}")
         allowance = "available" if codex and codex.get("available") else "unavailable / not readable"
         print(f"Codex plan allowance: {allowance}")
-        print(f"Codex historical median: {format_number(codex_history['median_elapsed_minutes'], 'min')}, {codex_history['runs']} runs\n")
+        print("Historical data")
+        print(f"Similar tasks: {codex_history['runs']}")
+        print(f"Median elapsed: {format_number(codex_history['median_elapsed_minutes'], 'min')}")
+        print(f"Accepted without revision: {codex_history['accepted_without_revision']} / {codex_history['completed']}\n")
         print(f"Suggested execution: {recommendation}")
         print(f"Confidence: {confidence}")
+        print(f"Budget gate: {gate['level']} / {gate['action']}")
+        print(f"Gate reason: {gate['reason']}")
         for note in notes:
             print(f"Reason: {note}")
+        if output.get("preflight_id"):
+            print(f"Preflight ID: {output['preflight_id']}")
+        if gate["action"] != "AUTO_EXECUTE" and not args.non_interactive and sys.stdin.isatty():
+            choice = input("\nProceed? [Y] Codex / [C] Cursor API / [N] Cancel: ").strip().lower()
+            selected = {"y": "CODEX", "c": "CURSOR_API", "n": "CANCEL"}.get(choice, "CANCEL")
+            print(f"Selected: {selected}")
+    return 0
+
+
+def command_finish(args: argparse.Namespace) -> int:
+    state_dir = args.state_dir.expanduser()
+    preflight = find_preflight(state_dir, args.preflight_id)
+    if not preflight:
+        print(f"Unknown preflight ID: {args.preflight_id}", file=sys.stderr)
+        return 2
+    _, runs_path = state_paths(state_dir)
+    if any(run.get("preflight_id") == args.preflight_id for run in read_runs(runs_path)):
+        print(f"Preflight is already finished: {args.preflight_id}", file=sys.stderr)
+        return 2
+    try:
+        after = codex_account_snapshot()
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        print(f"Could not read post-run Codex usage: {exc}", file=sys.stderr)
+        return 2
+    before_used = (preflight.get("codex_before") or {}).get("used_percent")
+    after_used = after.get("used_percent")
+    delta = None
+    if isinstance(before_used, (int, float)) and isinstance(after_used, (int, float)) and after_used >= before_used:
+        delta = round(float(after_used - before_used), 2)
+    attribution = "HIGH" if delta is not None and args.parallel_activity == "none" else "UNCERTAIN"
+    run = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "preflight_id": args.preflight_id,
+        "task_class": preflight["task_class"],
+        "route": args.route,
+        "completion": args.completion,
+        "acceptance": args.acceptance,
+        "elapsed_minutes": args.elapsed_minutes,
+        "human_revisions": args.human_revisions,
+        "observed_account_delta_points": delta,
+        "attribution_confidence": attribution,
+        "parallel_activity": args.parallel_activity,
+        "checks": {"tests": args.tests, "lint": args.lint, "build": args.build},
+    }
+    append_run(runs_path, run)
+    append_snapshot(state_dir, after)
+    print(f"Observed account delta: {format_percent_value(delta)}")
+    print(f"Attribution: {attribution}")
+    if args.parallel_activity != "none":
+        print("Parallel Codex activity was detected or not ruled out; delta is not used as a high-confidence task measurement.")
     return 0
 
 
@@ -307,6 +452,10 @@ def format_percent(value: float | None) -> str:
     return "no data" if value is None else f"{value:.0%}"
 
 
+def format_percent_value(value: float | None) -> str:
+    return "not available" if value is None else f"{value:g}%"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="abr", description="Agent Budget Router daily CLI")
     parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR, help="Defaults to ~/.agent-budget-router")
@@ -317,7 +466,21 @@ def build_parser() -> argparse.ArgumentParser:
     route.add_argument("--skill-count", type=int, default=0)
     route.add_argument("--no-codex-probe", action="store_true")
     route.add_argument("--json", action="store_true")
+    route.add_argument("--non-interactive", action="store_true", help="Print the gate without prompting")
+    route.add_argument("--no-save-preflight", action="store_true", help="Do not persist a before snapshot")
     route.set_defaults(handler=command_route)
+    finish = commands.add_parser("finish", help="Capture post-run usage and close a preflight")
+    finish.add_argument("preflight_id")
+    finish.add_argument("--route", default="codex", choices=("cursor_api", "codex"))
+    finish.add_argument("--completion", required=True, choices=("completed", "blocked", "failed"))
+    finish.add_argument("--acceptance", default="unknown", choices=("satisfied", "unsatisfied", "unknown"))
+    finish.add_argument("--elapsed-minutes", type=float)
+    finish.add_argument("--tests", default="not_run", choices=("passed", "failed", "not_run"))
+    finish.add_argument("--lint", default="not_run", choices=("passed", "failed", "not_run"))
+    finish.add_argument("--build", default="not_run", choices=("passed", "failed", "not_run"))
+    finish.add_argument("--human-revisions", type=int, default=0)
+    finish.add_argument("--parallel-activity", default="unknown", choices=("none", "detected", "unknown"))
+    finish.set_defaults(handler=command_finish)
     record = commands.add_parser("record", help="Store compact post-run facts; no prompt or transcript is stored")
     record.add_argument("--task-class", required=True)
     record.add_argument("--route", required=True, choices=("cursor_api", "codex"))

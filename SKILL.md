@@ -62,6 +62,16 @@ python <skill>/scripts/abr.py route "repo全体をレビューしてIssue候補�
 python <skill>/scripts/abr.py stats
 ```
 
+`route` は実行前プリフライトであり、次をレンジ表示する。
+
+- 推定 input / output tokens
+- 推定 Codex allowance impact と Confidence
+- 実測の現在利用率 / 残量
+- 同種タスク件数、所要時間中央値、無修正受入件数
+- `NORMAL / CONFIRM / WARN` の予算ゲート
+
+`NORMAL` は自動実行可能、`CONFIRM` は実行先確認、`WARN` は代替経路を強く提示する。対話端末では `CONFIRM / WARN` 時に `[Y] Codex / [C] Cursor API / [N] Cancel` を表示する。エージェント統合では `--non-interactive --json` を使い、`gate.action` に従う。
+
 `abr route` は既存の context / output 見積に、Codex App Serverで取得する現在のプラン利用枠とタスク種別ごとの履歴を組み合わせる。Cursor API単価は初回にローカル設定へ登録する。タスクごとのJSON作成は不要で、実行後は以下のように事実だけを記録する。`quality_score` は不要。
 
 ```bash
@@ -84,6 +94,16 @@ python <skill>/scripts/abr.py capture-codex
 ```
 
 これはアカウント全体のスナップショットであり、同時実行分を特定タスクに誤配賦しない。タスク完了・テスト結果などの事実は実行元のhookから `abr record` を呼ぶ運用を想定する。
+
+`route` が返した Preflight ID を実行後に閉じると、前後の利用率差分を記録する。
+
+```bash
+python <skill>/scripts/abr.py finish <preflight-id> \
+  --completion completed --acceptance satisfied --elapsed-minutes 13 \
+  --tests passed --parallel-activity none
+```
+
+`--parallel-activity none` の場合だけ差分を `HIGH` attribution として、同種タスクの次回推定に利用する。`detected` / `unknown` はアカウント全体の参考値として保存するが、タスク別の推定には混ぜない。
 
 ## 同一タスクの比較（分析用）
 
