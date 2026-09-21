@@ -33,4 +33,5 @@ N 件（目安 10+）蓄積後、タスク種別ごとの平均 ratio をレポ�
 - **個人ローカル**が既定
 - 共有は opt-in（チームで calibration を共有する場合は別途合意）
 - 実測値は請求 API ではなく、ユーザーが観測した usage を手入力でよい（v2）
-- Cursor API と Codex の USD 比較は、Codexが追加クレジットを使った実行だけで行う。プラン内枠は残利用枠の判断に使い、恣意的なタスク単価に変換しない
+- Cursor API と Codex の USD 比較は、Codexが追加クレジットを使った実行だけで厳密に行う。プラン内枠は直接費としてCodex優位の判断に使えるが、恣意的な固定費配賦はしない
+- 日常運用の履歴は `abr.py record` が `~/.agent-budget-router/runs.jsonl` に保存する。主観的な5点評価ではなく、completion / acceptance / tests / lint / build / revisions を優先する

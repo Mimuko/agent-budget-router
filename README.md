@@ -35,7 +35,8 @@ likely to *read and re-read*, not your whole workspace.
 - Returns **Go / Split / Defer** verdict
 - Recommends phased execution (plan → implement → review)
 - Separates model catalog from estimation logic
-- Compares observed Cursor → OpenAI API and Codex runs without inventing a per-task price for included plan allowance
+- Routes daily work from estimated context, live Codex allowance, and local performance history
+- Keeps controlled Cursor → OpenAI API / Codex comparisons as a supporting analysis tool
 
 ## What it does NOT do
 
@@ -165,6 +166,58 @@ completion, elapsed time, and quality score. Then run `compare_runs.py`.
 
 See [measurement schema](references/measurement-schema.md) and runnable
 [examples](examples/measurements/).
+
+## Daily routing
+
+Use `abr.py` as the normal interface; `compare_runs.py` is for the initial
+paired experiments only.
+
+```bash
+python scripts/abr.py route "repo全体をレビューしてIssue候補を作る"
+python scripts/abr.py stats
+```
+
+`abr route` estimates the task as before, reads the currently logged-in Codex
+plan/rate-limit state through `codex app-server`, and applies median facts from
+prior runs of the same task class. It recommends `CODEX` at medium confidence
+when plan allowance is available; confidence becomes high after three accepted
+comparable Codex runs. It does not claim that a fixed ChatGPT plan has a zero
+per-task price.
+
+To automatically retain a privacy-safe Codex account snapshot (current plan
+allowance and global token-activity summary), run this before/after a work
+session or from an automation hook:
+
+```bash
+python scripts/abr.py capture-codex
+```
+
+The snapshot is global account telemetry, not a per-task attribution. The
+router never silently assigns unrelated concurrent usage to a task.
+
+For Cursor API cost estimates, configure the current rates once (this writes
+internal local state; you do not create a JSON file):
+
+```bash
+python scripts/abr.py configure \
+  --input-rate 4 --cached-input-rate 0.4 --output-rate 20 \
+  --cached-input-ratio 0.2
+```
+
+Use the rates applicable to the actual Cursor API model at the time; the
+router intentionally does not embed volatile price data.
+
+After a run, record outcome facts rather than a hand-authored comparison JSON:
+
+```bash
+python scripts/abr.py record --task-class repository_review \
+  --route codex --completion completed --acceptance satisfied \
+  --elapsed-minutes 12 --tests passed --lint passed --build passed
+```
+
+The local history contains no prompts, transcripts, source code, or secrets.
+`quality_score` is optional; acceptance criteria and test/lint/build results
+are the primary performance signals.
 
 ## License
 

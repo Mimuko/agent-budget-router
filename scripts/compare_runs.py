@@ -79,16 +79,14 @@ def build_recommendation(cursor: dict[str, Any], codex: dict[str, Any], cursor_u
         return "NO_RECOMMENDATION", ["both runs must complete before cost routing is decided"]
     c_quality = optional_number(cursor, "quality_score", "cursor")
     d_quality = optional_number(codex, "quality_score", "codex")
-    if c_quality is None or d_quality is None:
-        return "NO_RECOMMENDATION", ["record quality_score for both runs (0-5) before routing"]
-    if abs(c_quality - d_quality) > 0.5:
+    if c_quality is not None and d_quality is not None and abs(c_quality - d_quality) > 0.5:
         return "NO_RECOMMENDATION", ["quality differs by more than 0.5; lower cost is not comparable"]
 
     mode = codex.get("billing_mode")
     if mode == "included_plan":
-        notes.append("Codex run used included plan allowance; fixed plan cost is not allocated per task")
-        notes.append("Use this result for allowance management, not direct USD cost ranking")
-        return "MANUAL_REVIEW", notes
+        notes.append("Codex used included plan allowance; fixed plan cost is not allocated per task")
+        notes.append("Cost recommendation: CODEX (direct marginal cost); confidence: MEDIUM")
+        return "CODEX", notes
     if mode != "additional_credit":
         return "NO_RECOMMENDATION", ["codex.billing_mode must be included_plan or additional_credit"]
     codex_usd = optional_number(codex, "additional_credit_usd", "codex")

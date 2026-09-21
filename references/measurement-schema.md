@@ -1,6 +1,6 @@
 # 実測コスト比較（MY-180）
 
-`compare_runs.py` は、同一タスクを Cursor → OpenAI API と Codex で完了させた結果を比較する。請求 API や認証情報には接続しない。数値は各ダッシュボード／実行ログから転記し、リポジトリに保存する JSON に API key・会話本文・個人情報を含めない。
+`compare_runs.py` は、同一タスクを Cursor → OpenAI API と Codex で完了させた結果を比較する補助機能。日常的な事前判断には `abr route`、履歴確認には `abr stats` を使う。請求 API や認証情報には接続しない。数値は各ダッシュボード／実行ログから転記し、リポジトリに保存する JSON に API key・会話本文・個人情報を含めない。
 
 ## Cursor → OpenAI API
 
@@ -59,7 +59,7 @@ Codexは、プラン内利用枠と追加クレジットを同じ「タスク単
 
 ## ルーティング判定
 
-`CURSOR_API` / `CODEX` は、同じ `task_id`、双方 completed、品質差 0.5 点以内、かつ Cursor の API 実費と Codex の追加クレジット実費がそろう場合だけ返す。それ以外は `MANUAL_REVIEW` または `NO_RECOMMENDATION`。プラン料金を任意にタスクへ配賦して「Codexが無料」と判定しない。
+`CURSOR_API` / `CODEX` は、同じ `task_id`、双方 completed、かつ両方の `quality_score` がある場合は品質差 0.5 点以内、のときに返す。`quality_score` は任意であり、tests / lint / build / acceptance / human revisions を優先する。Codexのプラン内枠は直接費として `CODEX` を推薦できるが、固定プラン料金を任意にタスクへ配賦して「無料」とは表示しない。
 
 ```bash
 python scripts/compare_runs.py --cursor examples/measurements/cursor-api.json \
