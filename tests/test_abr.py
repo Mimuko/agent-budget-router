@@ -9,14 +9,23 @@ sys.path.insert(0, str(SCRIPTS))
 
 from abr import (  # noqa: E402
     append_snapshot,
+    append_run,
     budget_gate,
     build_parser,
+    command_finish,
     cursor_estimated_cost,
     decide_route,
     estimate_allowance_impact,
     route_stats,
     task_class,
 )
+
+
+def finish_args(tmp_path, preflight_id="preflight-1"):
+    return build_parser().parse_args([
+        "--state-dir", str(tmp_path), "finish", preflight_id,
+        "--completion", "completed", "--acceptance", "satisfied",
+    ])
 
 
 def test_configure_uses_cli_options_not_a_user_authored_json_file():
@@ -50,6 +59,20 @@ def test_route_prefers_available_codex_plan_at_medium_confidence_without_history
     empty = {"runs": 0, "acceptance_rate": None}
     recommendation, confidence, _ = decide_route(0.4, {"available": True}, empty, empty)
     assert (recommendation, confidence) == ("CODEX", "MEDIUM")
+
+
+def test_route_falls_back_to_cursor_when_codex_allowance_is_unavailable():
+    empty = {"runs": 0, "acceptance_rate": None}
+    recommendation, confidence, notes = decide_route(0.4, None, empty, empty)
+    assert (recommendation, confidence) == ("CURSOR_API", "MEDIUM")
+    assert "Codex plan allowance is unavailable" in notes[0]
+
+
+def test_route_requires_manual_review_when_no_fallback_is_configured():
+    empty = {"runs": 0, "acceptance_rate": None}
+    recommendation, confidence, notes = decide_route(None, None, empty, empty)
+    assert (recommendation, confidence) == ("MANUAL_REVIEW", "LOW")
+    assert "Set Cursor API rates" in notes[0]
 
 
 def test_stats_uses_acceptance_signals_not_subjective_quality():
@@ -104,3 +127,34 @@ def test_budget_gate_warns_when_live_allowance_is_missing():
         "action": "SUGGEST_ALTERNATIVE",
         "reason": "Live Codex allowance is unavailable",
     }
+
+
+def test_finish_rejects_unknown_preflight_without_probe(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("abr.codex_account_snapshot", lambda: (_ for _ in ()).throw(AssertionError("must not probe")))
+
+    assert command_finish(finish_args(tmp_path, "missing")) == 2
+    assert "Unknown preflight ID: missing" in capsys.readouterr().err
+
+
+def test_finish_rejects_codex_probe_failure_without_recording(tmp_path, monkeypatch, capsys):
+    append_run(tmp_path / "preflights.jsonl", {
+        "preflight_id": "preflight-1", "task_class": "small_edit",
+        "codex_before": {"used_percent": 10},
+    })
+    monkeypatch.setattr("abr.codex_account_snapshot", lambda: (_ for _ in ()).throw(OSError("codex unavailable")))
+
+    assert command_finish(finish_args(tmp_path)) == 2
+    assert "Could not read post-run Codex usage" in capsys.readouterr().err
+    assert not (tmp_path / "runs.jsonl").exists()
+
+
+def test_finish_rejects_double_finish_without_second_probe(tmp_path, monkeypatch, capsys):
+    append_run(tmp_path / "preflights.jsonl", {
+        "preflight_id": "preflight-1", "task_class": "small_edit",
+        "codex_before": {"used_percent": 10},
+    })
+    append_run(tmp_path / "runs.jsonl", {"preflight_id": "preflight-1"})
+    monkeypatch.setattr("abr.codex_account_snapshot", lambda: (_ for _ in ()).throw(AssertionError("must not probe")))
+
+    assert command_finish(finish_args(tmp_path)) == 2
+    assert "Preflight is already finished: preflight-1" in capsys.readouterr().err

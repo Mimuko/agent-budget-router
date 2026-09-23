@@ -28,6 +28,14 @@ likely to *read and re-read*, not your whole workspace.
 | Cursor Skill (MVP) | `SKILL.md`, `references/`, `scripts/`, `catalog/` | Cursor Agent |
 | OpenAI Skill compatible | + `agents/openai.yaml` | ChatGPT / Codex skill packages |
 
+`scripts/abr.py` is the canonical daily CLI. Use it for the normal
+`route → finish → stats` workflow; it keeps local state under
+`~/.agent-budget-router/` and never stores prompts, transcripts, source code,
+or credentials. The other scripts are auxiliary: `estimate.py` is the
+backward-compatible standalone estimator, `compare_runs.py` is for controlled
+Cursor/API-versus-Codex comparisons, and `scan_workspace.py` is an optional
+input helper for estimation. They do not replace `abr.py` for daily routing.
+
 ## What it does
 
 - Estimates **expected agent context** (not full repo token count)
@@ -326,6 +334,10 @@ paired experiments only.
 
 ```bash
 python scripts/abr.py route "repo全体をレビューしてIssue候補を作る"
+# 選択した経路で実行し、表示された Preflight ID を使って閉じる
+python scripts/abr.py finish <preflight-id> \
+  --route codex --completion completed --acceptance satisfied \
+  --tests passed --parallel-activity unknown
 python scripts/abr.py stats
 ```
 
@@ -384,7 +396,9 @@ python scripts/abr.py configure \
 Use the rates applicable to the actual Cursor API model at the time; the
 router intentionally does not embed volatile price data.
 
-After a run, record outcome facts rather than a hand-authored comparison JSON:
+If an automation hook cannot create or close a preflight, use `record` as the
+alternative outcome-only path. Do not use `record` and `finish` for the same
+run; `finish` is the canonical path when a preflight exists.
 
 ```bash
 python scripts/abr.py record --task-class repository_review \

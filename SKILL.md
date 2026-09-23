@@ -55,10 +55,15 @@ python <skill>/scripts/estimate.py "タスク説明" \
 
 ## 日常のルーティング（MY-180）
 
-通常は `abr route` を使う。初期の同一タスク比較だけ `compare_runs.py` を使い、以後はコンパクトな実行履歴の中央値で判断する。
+`scripts/abr.py` が日常運用の正規入口。通常の流れは **route → 実行 → finish → stats** で、
+`compare_runs.py` は初期の同一タスク比較だけに使う補助スクリプト。
 
 ```bash
 python <skill>/scripts/abr.py route "repo全体をレビューしてIssue候補を作る"
+# 選択した経路で実行し、表示された Preflight ID を使って閉じる
+python <skill>/scripts/abr.py finish <preflight-id> \
+  --route codex --completion completed --acceptance satisfied \
+  --tests passed --parallel-activity unknown
 python <skill>/scripts/abr.py stats
 ```
 
@@ -79,71 +84,8 @@ python <skill>/scripts/abr.py configure \
   --input-rate <USD/MTok> --cached-input-rate <USD/MTok> --output-rate <USD/MTok>
 ```
 
-```bash
-python <skill>/scripts/abr.py record --task-class repository_review \
-  --route codex --completion completed --acceptance satisfied \
-  --elapsed-minutes 12 --tests passed --lint passed --build passed
-```
-
-保存先は既定で `~/.agent-budget-router/runs.jsonl`。プロンプト、会話、ソースコード、認証情報は保存しない。
-
-Codexの現在の利用枠とグローバル使用量は、手入力なしで取得・保存できる。
-
-```bash
-python <skill>/scripts/abr.py capture-codex
-```
-
-これはアカウント全体のスナップショットであり、同時実行分を特定タスクに誤配賦しない。タスク完了・テスト結果などの事実は実行元のhookから `abr record` を呼ぶ運用を想定する。
-
-`route` が返した Preflight ID を実行後に閉じると、前後の利用率差分を記録する。
-
-```bash
-python <skill>/scripts/abr.py finish <preflight-id> \
-  --completion completed --acceptance satisfied --elapsed-minutes 13 \
-  --tests passed --parallel-activity none
-```
-
-`--parallel-activity none` の場合だけ差分を `HIGH` attribution として、同種タスクの次回推定に利用する。`detected` / `unknown` はアカウント全体の参考値として保存するが、タスク別の推定には混ぜない。
-
-## 同一タスクの比較（分析用）
-
-同一タスクを両方で完了させたあと、[references/measurement-schema.md](references/measurement-schema.md) の JSON を記録して比較する。
-
-```bash
-python <skill>/scripts/compare_runs.py \
-  --cursor <cursor-api-measurement.json> \
-  --codex <codex-measurement.json>
-```
-
-- Cursor API はダッシュボードの `api_cost_usd` を正本にする。未取得時だけ、その時点の料金と input / cached input / output token から計算する。
-- Codexのプラン内利用枠はタスクごとの USD に配賦しない。`included_plan` は直接費としてCodex優位だが固定費は未配賦、として扱う。
-- `quality_score` は任意。記録する場合だけ品質差 0.5 点以内を比較条件にし、日常運用では tests / lint / build / acceptance / human revisions を優先する。
-
-## 日常のルーティング（MY-180）
-
-通常は `abr route` を使う。初期の同一タスク比較だけ `compare_runs.py` を使い、以後はコンパクトな実行履歴の中央値で判断する。
-
-```bash
-python <skill>/scripts/abr.py route "repo全体をレビューしてIssue候補を作る"
-python <skill>/scripts/abr.py stats
-```
-
-`route` は実行前プリフライトであり、次をレンジ表示する。
-
-- 推定 input / output tokens
-- 推定 Codex allowance impact と Confidence
-- 実測の現在利用率 / 残量
-- 同種タスク件数、所要時間中央値、無修正受入件数
-- `NORMAL / CONFIRM / WARN` の予算ゲート
-
-`NORMAL` は自動実行可能、`CONFIRM` は実行先確認、`WARN` は代替経路を強く提示する。対話端末では `CONFIRM / WARN` 時に `[Y] Codex / [C] Cursor API / [N] Cancel` を表示する。エージェント統合では `--non-interactive --json` を使い、`gate.action` に従う。
-
-`abr route` は既存の context / output 見積に、Codex App Serverで取得する現在のプラン利用枠とタスク種別ごとの履歴を組み合わせる。Cursor API単価は初回にローカル設定へ登録する。タスクごとのJSON作成は不要で、実行後は以下のように事実だけを記録する。`quality_score` は不要。
-
-```bash
-python <skill>/scripts/abr.py configure \
-  --input-rate <USD/MTok> --cached-input-rate <USD/MTok> --output-rate <USD/MTok>
-```
+`finish` を使えない自動化 hook は、Preflight を作らず事実だけを残す
+`record` を使う。`record` と `finish` を同じ実行について併用しない。
 
 ```bash
 python <skill>/scripts/abr.py record --task-class repository_review \
@@ -160,16 +102,6 @@ python <skill>/scripts/abr.py capture-codex
 ```
 
 これはアカウント全体のスナップショットであり、同時実行分を特定タスクに誤配賦しない。タスク完了・テスト結果などの事実は実行元のhookから `abr record` を呼ぶ運用を想定する。
-
-`route` が返した Preflight ID を実行後に閉じると、前後の利用率差分を記録する。
-
-```bash
-python <skill>/scripts/abr.py finish <preflight-id> \
-  --completion completed --acceptance satisfied --elapsed-minutes 13 \
-  --tests passed --parallel-activity none
-```
-
-`--parallel-activity none` の場合だけ差分を `HIGH` attribution として、同種タスクの次回推定に利用する。`detected` / `unknown` はアカウント全体の参考値として保存するが、タスク別の推定には混ぜない。
 
 ## 同一タスクの比較（分析用）
 
