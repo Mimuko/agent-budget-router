@@ -36,6 +36,20 @@ backward-compatible standalone estimator, `compare_runs.py` is for controlled
 Cursor/API-versus-Codex comparisons, and `scan_workspace.py` is an optional
 input helper for estimation. They do not replace `abr.py` for daily routing.
 
+Skill正規入口の責務・入出力・参照解決は、[Skill契約](references/skill-contract.md)、
+[共通I/O契約](references/io-contract.md)、[Resolver契約](references/resolver-contract.md)を正本とする。
+旧Host AdapterのI/Oは、[互換契約](../docs/architecture/host-adapter-contract.md)を参照する。
+
+### Cursor Hook PoC
+
+このリポジトリでは、`.cursor/hooks.json` の `beforeSubmitPrompt` が
+`.cursor/hooks/abr_before_submit.py` を呼ぶ最小PoCを提供する。Hookは共通Host Adapterを
+介して、軽微な依頼をそのまま送信し、`MY-<number>`形式の参照はLinear Resolverで取得してから
+ABR Coreへ渡す。`CONFIRM_FIRST`や参照取得失敗（既定: `ask`）では送信を停止する。
+
+PoCのLinear Resolverは、ログイン済みの `orca linear issue <id> --full --json` を利用する。
+GitHub / Backlog Resolver、Codex wrapper、App Server、実際のタスク分割は対象外である。
+
 ## What it does
 
 - Estimates **expected agent context** (not full repo token count)
@@ -142,6 +156,26 @@ python scripts/abr.py route "タスク内容" --non-interactive --json
 統合側は `gate.action` を確認してからタスクを起動する。`abr.py` 自体はCodexや
 Cursorのタスク実行ランチャーではない。
 
+### 標準プロンプトから呼び出す
+
+Cursor / Codexの通常の依頼文は、次のいずれか一つで渡す。本文は推定にだけ使われ、
+ABRのローカル履歴には保存されない。
+
+```powershell
+# 直接引数（短い依頼文）
+python scripts/abr.py route "mimu-coreのRouting Policyをレビューする" --json --non-interactive
+
+# stdin（Hostの標準プロンプト連携）
+Get-Content .\prompt.txt -Raw | python scripts/abr.py route --stdin --json --non-interactive
+
+# UTF-8ファイル（長い依頼文）
+python scripts/abr.py route --task-file .\prompt.txt --json --non-interactive
+```
+
+統合側はstdoutのJSONだけを読み、`gate.action`を判断材料にする。`AUTO_EXECUTE`でも
+実行自体はHostが担い、`ASK_USER` / `SUGGEST_ALTERNATIVE`では確認または代替経路を提示する。
+`--stdin`、`--task-file`、直接引数は同時に指定できない。
+
 ### 3. 選択した経路でタスクを実行する
 
 表示された `Preflight ID` を控え、CodexまたはCursorでタスクを実行する。
@@ -208,6 +242,15 @@ python scripts/abr.py record `
 
 ローカル状態は `~/.agent-budget-router/` に保存する。プロンプト、会話本文、
 ソースコード、APIキーは保存しない。
+
+### 実測補正の運用
+
+`route`の `estimated_context` / `estimated_generation` / `estimated_allowance_impact` は
+実行前の推定値であり、請求額や厳密な利用量ではない。実行後は、プリフライトがある場合は
+同じIDで `finish`し、ない場合は `record`する。`finish`はCodexのbefore/after利用率と
+完了・受入・テスト結果を保存し、並行実行が不明な場合は帰属を `UNCERTAIN` として補正に使わない。
+`stats`で同種タスクの中央値と受入率を確認し、3件未満は低〜中信頼度、6件以上の帰属可能な
+実測差分で高信頼度として次回の推定へ反映する。
 
 ## Quick start（従来の見積コマンド）
 

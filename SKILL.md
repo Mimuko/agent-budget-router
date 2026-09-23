@@ -37,7 +37,7 @@ Repository size  ≠  Expected agent context
 
 ## ワークフロー
 
-1. ユーザーのタスク説明を受け取る（必須）
+1. ユーザーのタスク説明を受け取る（必須）。通常のCursor / Codex依頼文は、入力契約に従い `route "..."`、`route --stdin`、または `route --task-file` で渡せる。
 2. 任意: 対象パス・ファイル名のヒントを確認
 3. 任意: `python scripts/scan_workspace.py --root <workspace> --hint <path> --json` で関連ファイル候補を取得
 4. `python scripts/estimate.py` で見積を実行:

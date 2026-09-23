@@ -1,5 +1,6 @@
 """Tests for the daily abr route / stats CLI."""
 
+import io
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from abr import (  # noqa: E402
     budget_gate,
     build_parser,
     command_finish,
+    command_route,
     cursor_estimated_cost,
     decide_route,
     estimate_allowance_impact,
@@ -34,6 +36,46 @@ def test_configure_uses_cli_options_not_a_user_authored_json_file():
     ])
     assert args.input_rate == 2
     assert args.cached_input_ratio == 0
+
+
+def test_route_accepts_standard_prompt_from_stdin():
+    args = build_parser().parse_args(["route", "--stdin", "--json", "--no-codex-probe"])
+    assert args.task is None
+    assert args.stdin is True
+
+
+def test_route_accepts_standard_prompt_from_task_file(tmp_path):
+    task_file = tmp_path / "prompt.txt"
+    task_file.write_text("  Fix the routing policy.\n", encoding="utf-8")
+    args = build_parser().parse_args(["route", "--task-file", str(task_file), "--json", "--no-codex-probe"])
+    assert args.task_file == task_file
+
+
+def test_route_task_sources_are_mutually_exclusive(tmp_path):
+    task_file = tmp_path / "prompt.txt"
+    task_file.write_text("task", encoding="utf-8")
+    args = build_parser().parse_args(["route", "inline", "--task-file", str(task_file)])
+    from abr import read_route_task
+    try:
+        read_route_task(args)
+    except ValueError as exc:
+        assert "exactly one task source" in str(exc)
+    else:
+        raise AssertionError("expected conflicting task sources to fail")
+
+
+def test_json_route_does_not_prompt_and_keeps_prompt_out_of_output(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("abr.codex_account_snapshot", lambda: {"available": False, "used_percent": None})
+    monkeypatch.setattr("abr.input", lambda _: (_ for _ in ()).throw(AssertionError("must not prompt")), raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO("Review the routing policy\n"))
+    args = build_parser().parse_args([
+        "--state-dir", str(tmp_path), "route", "--stdin", "--json",
+    ])
+    assert command_route(args) == 0
+    captured = capsys.readouterr()
+    assert "Review the routing policy" not in captured.out
+    assert '"task_class"' in captured.out
+    assert captured.err == ""
 
 
 def test_capture_snapshot_is_kept_separate_from_task_runs(tmp_path):

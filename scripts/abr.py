@@ -34,6 +34,11 @@ BOOTSTRAP_ALLOWANCE_IMPACT: dict[str, tuple[float, float]] = {
     "large_refactor": (8.0, 14.0),
 }
 
+PREFLIGHT_SIGNALS = (
+    "横断", "複数", "全体", "リファクタ", "設計", "architecture", "integration",
+    "migrate", "migration", "plugin", "skill", "モデル", "検証", "連携",
+)
+
 
 def state_paths(state_dir: Path) -> tuple[Path, Path]:
     return state_dir / "config.json", state_dir / "runs.jsonl"
@@ -88,6 +93,56 @@ def task_class(task: str, exploration: str) -> str:
     if exploration == "cross-cutting change":
         return "cross_cutting"
     return "large_refactor"
+
+
+def core_task_text(prompt: str, task_context: dict[str, Any] | None = None) -> str:
+    """Build ephemeral, host-neutral text for Core classification only."""
+    parts = [prompt]
+    if task_context:
+        for key in ("title", "summary"):
+            value = task_context.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+        criteria = task_context.get("acceptance_criteria")
+        if isinstance(criteria, list):
+            parts.extend(item for item in criteria if isinstance(item, str))
+    return "\n".join(part for part in parts if part).strip()
+
+
+def should_preflight(prompt: str, task_context: dict[str, Any] | None = None) -> dict[str, str]:
+    """Return a lightweight, host-neutral preflight decision.
+
+    This must not probe Codex, read local history, or create a preflight record.
+    """
+    text = core_task_text(prompt, task_context)
+    if not text:
+        return {"decision": "INPUT_UNAVAILABLE", "reason": "input_unavailable"}
+    lower = text.lower()
+    if task_context or any(signal in lower for signal in PREFLIGHT_SIGNALS):
+        reason = "cross_cutting" if any(signal in lower for signal in PREFLIGHT_SIGNALS) else "medium_task"
+        return {"decision": "PREFLIGHT", "reason": reason}
+    return {"decision": "SKIP", "reason": "small_task"}
+
+
+def route_preflight(prompt: str, task_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Run the detailed, host-neutral part of a preflight.
+
+    Host selection, usage probing, local history, persistence, and execution are
+    deliberately outside this entry point.
+    """
+    text = core_task_text(prompt, task_context)
+    result = estimate(text)
+    kind = task_class(text, result["exploration_pattern"])
+    return {
+        "task_class": kind,
+        "estimated_context": result["estimated_context"],
+        "estimated_generation": result["estimated_generation"],
+        "execution_policy": "CONFIRM_FIRST",
+        "gate": {
+            "level": "CONFIRM",
+            "action": "ASK_USER",
+        },
+    }
 
 
 def median(values: list[float]) -> float | None:
@@ -271,12 +326,35 @@ def decide_route(cursor_cost: float | None, codex: dict[str, Any] | None, cursor
     return "MANUAL_REVIEW", "LOW", notes
 
 
+def read_route_task(args: argparse.Namespace) -> str:
+    """Resolve the standard prompt input without persisting its contents."""
+    sources = sum((args.task is not None, args.stdin, args.task_file is not None))
+    if sources != 1:
+        raise ValueError("provide exactly one task source: argument, --stdin, or --task-file")
+
+    if args.task is not None:
+        task = args.task
+    elif args.stdin:
+        task = sys.stdin.read()
+    else:
+        try:
+            task = args.task_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"could not read task file {args.task_file}: {exc}") from exc
+
+    task = task.strip()
+    if not task:
+        raise ValueError("task input must not be empty")
+    return task
+
+
 def command_route(args: argparse.Namespace) -> int:
     state_dir = args.state_dir.expanduser()
     config_path, runs_path = state_paths(state_dir)
     config, runs = read_json(config_path, {}), read_runs(runs_path)
-    result = estimate(args.task, path_hints=args.path_hints or None, skill_count=args.skill_count)
-    kind = task_class(args.task, result["exploration_pattern"])
+    task = read_route_task(args)
+    result = estimate(task, path_hints=args.path_hints or None, skill_count=args.skill_count)
+    kind = task_class(task, result["exploration_pattern"])
     codex = None
     if not args.no_codex_probe:
         try:
@@ -330,7 +408,7 @@ def command_route(args: argparse.Namespace) -> int:
             print(f"Reason: {note}")
         if output.get("preflight_id"):
             print(f"Preflight ID: {output['preflight_id']}")
-        if gate["action"] != "AUTO_EXECUTE" and not args.non_interactive and sys.stdin.isatty():
+        if gate["action"] != "AUTO_EXECUTE" and not args.non_interactive and not args.json and sys.stdin.isatty():
             choice = input("\nProceed? [Y] Codex / [C] Cursor API / [N] Cancel: ").strip().lower()
             selected = {"y": "CODEX", "c": "CURSOR_API", "n": "CANCEL"}.get(choice, "CANCEL")
             print(f"Selected: {selected}")
@@ -461,7 +539,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR, help="Defaults to ~/.agent-budget-router")
     commands = parser.add_subparsers(dest="command", required=True)
     route = commands.add_parser("route", help="Recommend a route before starting work")
-    route.add_argument("task")
+    route.add_argument("task", nargs="?", help="Task text (mutually exclusive with --stdin/--task-file)")
+    route.add_argument("--stdin", action="store_true", help="Read the standard prompt from stdin")
+    route.add_argument("--task-file", type=Path, help="Read the standard prompt from a UTF-8 file")
     route.add_argument("--path-hint", action="append", dest="path_hints", default=[])
     route.add_argument("--skill-count", type=int, default=0)
     route.add_argument("--no-codex-probe", action="store_true")
@@ -509,7 +589,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.handler(args)
+    try:
+        return args.handler(args)
+    except ValueError as exc:
+        print(f"abr: error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
