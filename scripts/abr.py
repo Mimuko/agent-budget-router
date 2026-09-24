@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from abr_core import estimate_task, route, should_preflight, task_class
 from estimate import estimate
 
 
@@ -33,12 +34,6 @@ BOOTSTRAP_ALLOWANCE_IMPACT: dict[str, tuple[float, float]] = {
     "cross_cutting": (4.0, 8.0),
     "large_refactor": (8.0, 14.0),
 }
-
-PREFLIGHT_SIGNALS = (
-    "横断", "複数", "全体", "リファクタ", "設計", "architecture", "integration",
-    "migrate", "migration", "plugin", "skill", "モデル", "検証", "連携",
-)
-
 
 def state_paths(state_dir: Path) -> tuple[Path, Path]:
     return state_dir / "config.json", state_dir / "runs.jsonl"
@@ -82,61 +77,11 @@ def append_snapshot(state_dir: Path, snapshot: dict[str, Any]) -> Path:
     return path
 
 
-def task_class(task: str, exploration: str) -> str:
-    lower = task.lower()
-    if any(word in lower for word in ("repo全体", "repository", "全体をレビュー", "issue候補", "audit")):
-        return "repository_review"
-    if exploration == "single-file edit":
-        return "small_edit"
-    if exploration == "known feature area":
-        return "feature_build"
-    if exploration == "cross-cutting change":
-        return "cross_cutting"
-    return "large_refactor"
-
-
-def core_task_text(prompt: str, task_context: dict[str, Any] | None = None) -> str:
-    """Build ephemeral, host-neutral text for Core classification only."""
-    parts = [prompt]
-    if task_context:
-        for key in ("title", "summary"):
-            value = task_context.get(key)
-            if isinstance(value, str):
-                parts.append(value)
-        criteria = task_context.get("acceptance_criteria")
-        if isinstance(criteria, list):
-            parts.extend(item for item in criteria if isinstance(item, str))
-    return "\n".join(part for part in parts if part).strip()
-
-
-def should_preflight(prompt: str, task_context: dict[str, Any] | None = None) -> dict[str, str]:
-    """Return a lightweight, host-neutral preflight decision.
-
-    This must not probe Codex, read local history, or create a preflight record.
-    """
-    text = core_task_text(prompt, task_context)
-    if not text:
-        return {"decision": "INPUT_UNAVAILABLE", "reason": "input_unavailable"}
-    lower = text.lower()
-    if task_context or any(signal in lower for signal in PREFLIGHT_SIGNALS):
-        reason = "cross_cutting" if any(signal in lower for signal in PREFLIGHT_SIGNALS) else "medium_task"
-        return {"decision": "PREFLIGHT", "reason": reason}
-    return {"decision": "SKIP", "reason": "small_task"}
-
-
 def route_preflight(prompt: str, task_context: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Run the detailed, host-neutral part of a preflight.
-
-    Host selection, usage probing, local history, persistence, and execution are
-    deliberately outside this entry point.
-    """
-    text = core_task_text(prompt, task_context)
-    result = estimate(text)
-    kind = task_class(text, result["exploration_pattern"])
+    """Compatibility wrapper for callers of the prior Host Adapter path."""
+    result = route(estimate_task(prompt, task_context))
     return {
-        "task_class": kind,
-        "estimated_context": result["estimated_context"],
-        "estimated_generation": result["estimated_generation"],
+        **result,
         "execution_policy": "CONFIRM_FIRST",
         "gate": {
             "level": "CONFIRM",

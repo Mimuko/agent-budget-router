@@ -3,7 +3,7 @@
 > Status: Normative / Skill v1 design
 >
 > 本書は、Cursor・Codex・Orcaから明示的に呼び出す論理共通Skillの責務と利用フローの正本である。
-> 共通I/Oの詳細は`io-contract.md`、参照解決は`resolver-contract.md`を正とする。
+> 共通I/Oは`io-contract.md`、Core APIは`core-contract.md`、参照解決は`resolver-contract.md`を正とする。
 
 ## 1. 正規入口
 
@@ -22,7 +22,7 @@ Skill Orchestratorは次を担当する。
 - 指示文の受付
 - Reference Resolverの呼び出し
 - Resolverから`references`、`task_context`、`source_identity`、`resolution_status`を受け取る
-- ABR Coreの`should_preflight()` / `route()`呼び出し
+- ABR Coreの`should_preflight()` / `estimate_task()` / `route()`呼び出し
 - `NEEDS_CONFIRMATION`と確認内容の返却
 - Agentまたはshimから受け取った承認結果の同一workflow内再検証
 - 共通I/O結果の返却
@@ -39,7 +39,33 @@ Skillは次を担当しない。
 - Agent / Modelの起動
 - Cursor / Codex / Orca固有UI・内部API操作
 
-## 3. 確認
+## 3. Core呼び出しフロー
+
+OrchestratorはResolverの結果を用意した後、まず`should_preflight(prompt, task_context?)`を呼ぶ。
+外部参照がない場合は`task_context`なしで呼び出してよい。
+
+```text
+should_preflight(prompt, task_context?)
+  ├─ SKIP
+  │    → estimate_task()とroute()を呼ばない。詳細見積・budget snapshot取得・履歴処理を行わない
+  │    → READY / execution_policy=DIRECT / forward.allowed=true
+  ├─ PREFLIGHT
+  │    → estimate_task(prompt, task_context?)を一度だけ呼び、TaskEstimateを得る
+  │    → 同じTaskEstimateをBudget Cost Estimatorへ渡す
+  │    → Estimatorが同一scope・quota window・総量基準の予測消費率を保証できる場合のみbudget_contextを構築
+  │    → route(TaskEstimate, budget_context?)を呼び、recommended_policyを得る
+  │    → workflow policyに従いstate、execution_policy、forward.allowedを決定
+  └─ INPUT_UNAVAILABLE
+       → estimate_task()とroute()を呼ばず、Orchestratorがinput_unavailable policyを適用
+```
+
+SKIP経路で利用枠取得は不要であり、詳細見積・履歴処理も行わない。例えば
+`READMEの誤字修正して`がSKIPなら、`estimate_task()`も`route()`も呼ばずREADY / DIRECTで返す。
+`PREFLIGHT`でbudget_contextを用意できない場合は省略し、TaskEstimateのbase recommendationを使う。
+TaskEstimateは同一評価内のtask sizingのSingle Source of Truthであり、Orchestratorと`route()`は再見積しない。
+確認後の再検証は新たな評価としてこの順序をやり直し、その評価内でも`estimate_task()`は一度だけ呼ぶ。
+
+## 4. 確認
 
 確認UI・入力は呼び出し元AgentまたはAgent別shimの責務とする。Skillがstdinで`y/N`を取得することは前提にしない。
 
@@ -47,7 +73,7 @@ Skillは次を担当しない。
 
 promptまたはIssue内容が変わった場合、承認結果は無効として再評価する。別のSkill呼び出しへ承認を自動持越ししない。
 
-## 4. Agent別shim
+## 5. Agent別shim
 
 Cursor、Codex、Orcaで共有するのは、ABR Core・scripts・contracts・referencesという論理共通資産である。物理的な同一package配置やmanifest形式は前提にしない。
 
