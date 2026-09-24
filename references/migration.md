@@ -18,12 +18,26 @@
 ## 移行順序
 
 1. Skill契約、I/O、Resolver、Linear Backend文書を確定する。
-2. ABR Coreの`should_preflight()` / `route()`を共通Skill入口から呼べる形に整理する。
-3. Linear Backend interfaceとResolverを分離する。
-4. Agent別shim / manifestを作成し、Cursor・Codex・Orcaの明示呼び出しを接続する。
-5. `SKIP`とLinear参照付き`CONFIRM_FIRST`を最小PoCで確認する。
-6. Hook利用をdeprecatedとして案内する。
-7. 利用実績と互換性を確認後、旧Hook・旧approval resume・旧出力形式の削除を判断する。
+2. ABR Coreの`should_preflight()` / `route()`をHost非依存APIとして整理する。
+3. Resolver / Linear Backend interfaceを分離する。
+4. Skill Orchestrator単体PoCを行う。
+5. Agent別shim / manifestを最小実装する。
+6. Cursor・Codex・Orca横断PoCを行う。
+7. Hook利用をdeprecatedとして案内する。
+8. 利用実績確認後、旧Hook・approval-resume・旧出力形式の削除を判断する。
+
+### Skill Orchestrator単体PoC
+
+Agent別shimの問題とSkill Orchestrator本体の問題を分離するため、shim接続前に次だけを確認する。
+
+- `READMEの誤字修正して`
+  - `NO_REFERENCE`
+  - `SKIP`
+  - `READY / DIRECT`
+- `MY-172を実装して`
+  - `RESOLVED`
+  - `PREFLIGHT`
+  - `NEEDS_CONFIRMATION / CONFIRM_FIRST`
 
 ## 非対象
 
@@ -32,4 +46,3 @@
 - Codex wrapperの自動起動
 - Skillによるコード変更・Issue分割・Agent起動
 - 正式Linear Backendの先行決定
-

@@ -1,158 +1,83 @@
 ---
 name: agent-budget-router
-description: 大きな Agent タスク投入前に、期待コンテキスト・複雑度・Go/Split/Defer・推奨 Lane を見積する FinOps Skill。Repository size ではなく Agent が実際に読む量を推定。親モデル切替や請求保証はしない。
+description: 明示的なSkill呼び出しで外部参照を解決し、タスク規模・予算・実行方針をpreflightして呼び出し元Agentへ返す。実装・Issue分割・Agent起動は行わない。
 ---
 
-# Agent Budget Router
+# agent-budget-router
 
-> **Estimate before you agent.**
+大きなタスクや外部Issue対応をAgentへ渡す前に、参照解決とABR preflightを行う論理共通Skill。
+Cursor、Codex、Orcaでは、それぞれのSkill配置形式・manifest・shimから明示的に呼び出す。
+物理的に同一packageをそのまま配布することは前提にしない。
 
-大きなタスクを Agent に投げる前に、**トークン見積・複雑度・推奨 Lane / モデル・予算リスク**を返す。単なるカウンターではなく、**投入判断（Go / Split / Defer）まで支援する**。実行後は Cursor → OpenAI API と Codex の観測値を比較し、次回の実行先判断も支援する。
+## 正規の使い方
 
-正本: [references/estimation-rules.md](references/estimation-rules.md)  
-出力形式: [references/output-format.md](references/output-format.md)
-
-## 核心原則
+ユーザーまたは呼び出し元Agentが明示的に呼び出す。
 
 ```text
-Repository size  ≠  Expected agent context
+/agent-budget-router MY-172を実装して
 ```
 
-100万行 repo の CSS 1 枚修正と、20 ファイルの Plugin 横断再設計は同じ見積にしない。
+軽微な単一ファイル修正など、preflightが不要な作業ではSkillを省略してよい。
+transparent Hook、通常チャットの自動横取り、Agentの自動起動は正規経路ではない。
 
-## いつ使うか
+## Skillのワークフロー
 
-- 大規模・初回・予算不安があるタスクを Agent に渡す**前**
-- mimu-core routing-policy §7 の役割委譲**前**（任意）。Cursor Lane ピンは §8
-- 「このまま投げたら焼けるか？」を人間が判断したいとき
+1. 指示文を受け取る。
+2. Reference / Context Resolverを呼び出す。
+3. Resolverから`references`、`task_context`、`source_identity`、`resolution_status`を受け取る。
+4. `should_preflight()`を呼び、小規模なら`SKIP`として軽量に終了する。
+5. 必要な場合だけ`route()`を呼び、見積と実行方針を返す。
+6. `CONFIRM_FIRST`または`SPLIT`では確認要求を返す。
+7. 確認UI・入力は呼び出し元AgentまたはAgent別shimが担当する。
+8. 承認結果を同一workflowへ戻し、ResolverとABR判定を再検証してから`READY`を返す。
+9. 実装・実行は呼び出し元Agentが行う。
 
-## やること / やらないこと
+Skillはstdinで`y/N`を取得すること、コード変更、Issue分割、Agent / Model起動、Host固有UI操作を行わない。
 
-| やる | やらない |
-|:-----|:---------|
-| Expected agent context のレンジ推定 | 親チャットのモデル自動切替 |
-| exploration multiplier 適用 | 請求 API 連携・正確な請求額保証 |
-| Go / Split / Defer の判断材料 | mimu-core / Client Plugin の業務判断代行 |
-| フェーズ分割と Lane 推奨 | workspace 全量のトークン化 |
+## 共通結果
 
-## ワークフロー
+共通結果は次の契約に従う。
 
-1. ユーザーのタスク説明を受け取る（必須）。通常のCursor / Codex依頼文は、入力契約に従い `route "..."`、`route --stdin`、または `route --task-file` で渡せる。
-2. 任意: 対象パス・ファイル名のヒントを確認
-3. 任意: `python scripts/scan_workspace.py --root <workspace> --hint <path> --json` で関連ファイル候補を取得
-4. `python scripts/estimate.py` で見積を実行:
+- `decision`: `SKIP | PREFLIGHT | INPUT_UNAVAILABLE`
+- `resolution_status`: `NO_REFERENCE | RESOLVED | PARTIALLY_RESOLVED | UNRESOLVED`
+- `state`: `READY | NEEDS_CONFIRMATION | BLOCKED`
+- `execution_policy`: `DIRECT | CONFIRM_FIRST | SPLIT | DEFER`
 
-```bash
-python <skill>/scripts/estimate.py "タスク説明" \
-  --path-hint mimu-core/agents/ \
-  --skill-count 5 \
-  --scan-json /tmp/scan.json
+`agent_action`は独立状態として返さず、呼び出し元Agentが`state`、`execution_policy`、
+`forward.allowed`から派生する。
+
+小規模タスクの例:
+
+```json
+{
+  "decision": "SKIP",
+  "resolution_status": "NO_REFERENCE",
+  "state": "READY",
+  "execution_policy": "DIRECT",
+  "forward": { "allowed": true }
+}
 ```
 
-5. [references/output-format.md](references/output-format.md) のテンプレで人間向けレポートを返す
-6. Verdict に従い、人間が Go / Split / Defer を決定
-7. **GO または Split 後**に routing-policy §7 の役割実行へ進む（Cursor では §8 Lane 委譲）
+確認が必要な例:
 
-## 日常のルーティング（MY-180）
-
-`scripts/abr.py` が日常運用の正規入口。通常の流れは **route → 実行 → finish → stats** で、
-`compare_runs.py` は初期の同一タスク比較だけに使う補助スクリプト。
-
-```bash
-python <skill>/scripts/abr.py route "repo全体をレビューしてIssue候補を作る"
-# 選択した経路で実行し、表示された Preflight ID を使って閉じる
-python <skill>/scripts/abr.py finish <preflight-id> \
-  --route codex --completion completed --acceptance satisfied \
-  --tests passed --parallel-activity unknown
-python <skill>/scripts/abr.py stats
+```json
+{
+  "decision": "PREFLIGHT",
+  "resolution_status": "RESOLVED",
+  "state": "NEEDS_CONFIRMATION",
+  "execution_policy": "CONFIRM_FIRST",
+  "forward": { "allowed": false }
+}
 ```
 
-`route` は実行前プリフライトであり、次をレンジ表示する。
+## 正本references
 
-- 推定 input / output tokens
-- 推定 Codex allowance impact と Confidence
-- 実測の現在利用率 / 残量
-- 同種タスク件数、所要時間中央値、無修正受入件数
-- `NORMAL / CONFIRM / WARN` の予算ゲート
+- [Skill責務・フロー](references/skill-contract.md)
+- [共通I/O・状態・policy](references/io-contract.md)
+- [Reference / Context Resolver](references/resolver-contract.md)
+- [Linear Backend](references/linear-backend.md)
+- [Migration / deprecated経路](references/migration.md)
+- [見積ルール](references/estimation-rules.md)
+- [実測スキーマ](references/measurement-schema.md)
 
-`NORMAL` は自動実行可能、`CONFIRM` は実行先確認、`WARN` は代替経路を強く提示する。対話端末では `CONFIRM / WARN` 時に `[Y] Codex / [C] Cursor API / [N] Cancel` を表示する。エージェント統合では `--non-interactive --json` を使い、`gate.action` に従う。
-
-`abr route` は既存の context / output 見積に、Codex App Serverで取得する現在のプラン利用枠とタスク種別ごとの履歴を組み合わせる。Cursor API単価は初回にローカル設定へ登録する。タスクごとのJSON作成は不要で、実行後は以下のように事実だけを記録する。`quality_score` は不要。
-
-```bash
-python <skill>/scripts/abr.py configure \
-  --input-rate <USD/MTok> --cached-input-rate <USD/MTok> --output-rate <USD/MTok>
-```
-
-`finish` を使えない自動化 hook は、Preflight を作らず事実だけを残す
-`record` を使う。`record` と `finish` を同じ実行について併用しない。
-
-```bash
-python <skill>/scripts/abr.py record --task-class repository_review \
-  --route codex --completion completed --acceptance satisfied \
-  --elapsed-minutes 12 --tests passed --lint passed --build passed
-```
-
-保存先は既定で `~/.agent-budget-router/runs.jsonl`。プロンプト、会話、ソースコード、認証情報は保存しない。
-
-Codexの現在の利用枠とグローバル使用量は、手入力なしで取得・保存できる。
-
-```bash
-python <skill>/scripts/abr.py capture-codex
-```
-
-これはアカウント全体のスナップショットであり、同時実行分を特定タスクに誤配賦しない。タスク完了・テスト結果などの事実は実行元のhookから `abr record` を呼ぶ運用を想定する。
-
-## 同一タスクの比較（分析用）
-
-同一タスクを両方で完了させたあと、[references/measurement-schema.md](references/measurement-schema.md) の JSON を記録して比較する。
-
-```bash
-python <skill>/scripts/compare_runs.py \
-  --cursor <cursor-api-measurement.json> \
-  --codex <codex-measurement.json>
-```
-
-- Cursor API はダッシュボードの `api_cost_usd` を正本にする。未取得時だけ、その時点の料金と input / cached input / output token から計算する。
-- Codexのプラン内利用枠はタスクごとの USD に配賦しない。`included_plan` は直接費としてCodex優位だが固定費は未配賦、として扱う。
-- `quality_score` は任意。記録する場合だけ品質差 0.5 点以内を比較条件にし、日常運用では tests / lint / build / acceptance / human revisions を優先する。
-
-## Verdict の扱い
-
-| Verdict | Agent の動き |
-|:--------|:-------------|
-| **GO** | 推奨 Lane で単一投入してよい見込み。スコープを 1 文で固定してから起動 |
-| **SPLIT_RECOMMENDED** | フェーズ分割を提案。Planning → analyst-planner、Execution → implementer、Review → cross-reviewer |
-| **DEFER** | 投入しない。タスク具体化・人間判断・調査先行を促す |
-
-最終決定は常に人間。
-
-## 3 層との関係
-
-| レイヤー | 担当 | 質問 |
-|:---------|:-----|:-----|
-| **agent-budget-router** | 投入前 | どれくらい食う？予算内？分割すべき？ |
-| **routing-policy §7 / §8** | 投入後 | どの役割（§7）／Cursor Lane（§8）に任せる？ |
-| **Skills** | 実行中 | 手順・出力・ガードレール |
-
-## カタログ
-
-- モデル本体: [catalog/models.default.yaml](catalog/models.default.yaml)
-- Lane 設定: [catalog/lanes.default.yaml](catalog/lanes.default.yaml)
-
-model / effort / speed は分離。未確認の合成 ID は生成しない。
-
-## 配布形態
-
-| 形態 | 内容 |
-|:-----|:-----|
-| **Cursor Skill MVP** | 本 SKILL + references + scripts + catalog |
-| **OpenAI Skill 互換** | 上記 + [agents/openai.yaml](agents/openai.yaml) |
-
-## 例
-
-- [examples/small-fix.md](examples/small-fix.md) — single-file / GO
-- [examples/feature-build.md](examples/feature-build.md) — known area / GO
-- [examples/large-agent-task.md](examples/large-agent-task.md) — architecture / SPLIT
-
-完了時は Verdict・complexity・context レンジ・推奨 phases を短く報告する。
+ABR履歴にはprompt本文、Issue本文、会話全文、ソースコード、認証情報を保存しない。

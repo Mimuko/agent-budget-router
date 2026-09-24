@@ -12,6 +12,8 @@ fetch_issue(identifier) -> BackendIssue | BackendError
 
 `BackendIssue`はprovider-native ID、identifier、title、description、URL、updatedAtまたはrevision、source identity生成に必要なsource fieldsを返す。`BackendError`は`not_found`、`auth_unavailable`、`network_error`、`partial`を区別する。
 
+Resolverが`NO_REFERENCE`を返した場合、Linear Backendは呼び出さない。Backendは検出済みのLinear参照に対してだけ実行し、取得結果をResolverが`RESOLVED / PARTIALLY_RESOLVED / UNRESOLVED`へ正規化する。
+
 ## 候補
 
 | 候補 | 扱い |
@@ -31,4 +33,3 @@ fetch_issue(identifier) -> BackendIssue | BackendError
 | Fallback backend | Orca候補・未確定 |
 | 認証方式 | 未確定 |
 | 根拠 | Spike後に追記 |
-

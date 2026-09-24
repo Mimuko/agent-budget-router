@@ -40,12 +40,16 @@ Skill正規入口の責務・入出力・参照解決は、[Skill契約](referen
 [共通I/O契約](references/io-contract.md)、[Resolver契約](references/resolver-contract.md)を正本とする。
 旧Host AdapterのI/Oは、[互換契約](../docs/architecture/host-adapter-contract.md)を参照する。
 
-### Cursor Hook PoC
+### Deprecated Cursor Hook PoC
 
-このリポジトリでは、`.cursor/hooks.json` の `beforeSubmitPrompt` が
-`.cursor/hooks/abr_before_submit.py` を呼ぶ最小PoCを提供する。Hookは共通Host Adapterを
-介して、軽微な依頼をそのまま送信し、`MY-<number>`形式の参照はLinear Resolverで取得してから
-ABR Coreへ渡す。`CONFIRM_FIRST`や参照取得失敗（既定: `ask`）では送信を停止する。
+このリポジトリには、`.cursor/hooks.json` の `beforeSubmitPrompt` が
+`.cursor/hooks/abr_before_submit.py` を呼ぶ旧互換PoCが残っている。これはSkill v1の正規入口ではなく、
+Cursor entrypointの実測・移行資料として扱う。透明なHook gateを新しい主経路として拡張しない。
+
+### Skill v1の正規入口
+
+通常の自動横取りではなく、`/agent-budget-router ...` のような明示的なSkill呼び出しを正規入口とする。
+Skill v1の責務、I/O、Resolver境界、Linear Backend戦略、移行順序は、上記の契約文書を正本として参照する。
 
 PoCのLinear Resolverは、ログイン済みの `orca linear issue <id> --full --json` を利用する。
 GitHub / Backlog Resolver、Codex wrapper、App Server、実際のタスク分割は対象外である。

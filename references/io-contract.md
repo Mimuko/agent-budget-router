@@ -21,6 +21,25 @@
 
 Resolver実行後、内部的に`references`、`task_context`、`source_identity`を補完する。`source_identity`はABR Coreへ渡さず、同一workflowの再検証にだけ使う。
 
+## policy
+
+`input_unavailable`と`reference_unresolved`で許可される値は、それぞれ次の3値だけである。
+
+- `fail_open`
+- `ask`
+- `fail_closed`
+
+初期既定値は両方とも`ask`とする。`INPUT_UNAVAILABLE`では`input_unavailable`、
+`UNRESOLVED`または`PARTIALLY_RESOLVED`では`reference_unresolved`を適用する。
+`PARTIALLY_RESOLVED`は、完全な`task_context`を保証できない限り、Skill v1では原則として
+`reference_unresolved` policyの対象とする。実装側が独自判断で別policyや状態を選んではならない。
+
+| policy | state | execution_policy | forward.allowed |
+|:--|:--|:--|:--|
+| `fail_open` | `READY` | `DIRECT` | `true` |
+| `ask` | `NEEDS_CONFIRMATION` | `CONFIRM_FIRST` | `false` |
+| `fail_closed` | `BLOCKED` | `DEFER` | `false` |
+
 ## 出力
 
 ```json
@@ -54,5 +73,7 @@ Resolver実行後、内部的に`references`、`task_context`、`source_identity
 - `SPLIT`は分割計画が呼び出し元Agentで承認されるまで転送不可。
 - `DEFER`は承認だけで`READY`へ遷移しない。
 
-参照解決不能時にIssue内容を推測しない。`ask`を初期既定値とし、呼び出し元Agentが確認できない場合は`NEEDS_CONFIRMATION / allowed=false`または`BLOCKED / allowed=false`で停止する。
+`INPUT_UNAVAILABLE`、`UNRESOLVED`、`PARTIALLY_RESOLVED`の状態マッピングは上記policyから
+機械的に導出する。Skill Orchestrator、Resolver、Agent別shimは独自の状態選択を行わない。
 
+参照解決不能時にIssue内容を推測しない。`ask`を初期既定値とし、呼び出し元Agentが確認できない場合は`NEEDS_CONFIRMATION / allowed=false`または`BLOCKED / allowed=false`で停止する。

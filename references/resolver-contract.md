@@ -11,8 +11,12 @@ Resolverは通常指示からIssue ID、URL、外部参照を抽出し、Provide
 - 参照抽出
 - Provider Resolverの選択
 - 外部情報の取得結果の正規化
-- `RESOLVED / PARTIALLY_RESOLVED / UNRESOLVED`の明示
+- `NO_REFERENCE / RESOLVED / PARTIALLY_RESOLVED / UNRESOLVED`の明示
 - `task_context`と`source_identity`の生成
+
+外部参照が検出されなかった場合は、`resolution_status = NO_REFERENCE`とする。
+この場合、Provider Backendは呼び出さず、promptのみを用いてABR Coreの後続判定へ進む。
+`READMEの誤字修正して`のような指示はこの経路を通り、通常は`SKIP`候補になる。
 
 担当しないこと:
 
@@ -55,4 +59,3 @@ Resolverは通常指示からIssue ID、URL、外部参照を抽出し、Provide
 ## Provider拡張
 
 Linear、GitHub、BacklogなどのProvider固有API・認証・エラー分類はResolver配下に閉じ込める。ABR CoreはProvider名やAPIを知らない。
-

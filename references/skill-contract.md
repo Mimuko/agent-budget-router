@@ -20,9 +20,8 @@ transparent Hookによる自動横取りではなく、ユーザーまたは呼�
 Skill Orchestratorは次を担当する。
 
 - 指示文の受付
-- Issue ID / URLなどの参照抽出
 - Reference Resolverの呼び出し
-- `task_context`への正規化
+- Resolverから`references`、`task_context`、`source_identity`、`resolution_status`を受け取る
 - ABR Coreの`should_preflight()` / `route()`呼び出し
 - `NEEDS_CONFIRMATION`と確認内容の返却
 - Agentまたはshimから受け取った承認結果の同一workflow内再検証
@@ -30,6 +29,11 @@ Skill Orchestratorは次を担当する。
 
 Skillは次を担当しない。
 
+- 参照抽出
+- Provider Resolverの選択
+- Provider取得結果の正規化
+- `task_context`生成
+- `source_identity`生成
 - コード変更・実装
 - Issue分割内容やサブタスクの生成
 - Agent / Modelの起動
@@ -48,4 +52,3 @@ promptまたはIssue内容が変わった場合、承認結果は無効として
 Cursor、Codex、Orcaで共有するのは、ABR Core・scripts・contracts・referencesという論理共通資産である。物理的な同一package配置やmanifest形式は前提にしない。
 
 Agent別shimは呼び出し構文、配置形式、確認UI、結果表示を変換するだけで、Coreの判定やProvider接続を持たない。
-

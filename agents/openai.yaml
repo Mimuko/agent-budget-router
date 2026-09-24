@@ -1,4 +1,4 @@
 interface:
   display_name: "Agent Budget Router"
-  short_description: "Estimate agent token usage and recommend Go / Split / Defer before large coding tasks"
-  default_prompt: "Use $agent-budget-router to estimate this task before handing it to a coding agent. Return Go / Split / Defer with expected context and recommended lanes."
+  short_description: "Resolve task references and return a host-neutral ABR preflight decision"
+  default_prompt: "Use $agent-budget-router explicitly for this task. Resolve references, run the ABR preflight, and return the Skill v1 contract result. Do not implement code or start another agent."
