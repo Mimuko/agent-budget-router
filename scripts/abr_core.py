@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -20,6 +21,10 @@ TASK_CLASSES = frozenset({
 })
 POLICIES = {"DIRECT": 0, "SPLIT": 1, "DEFER": 2}
 LEGACY_VERDICTS = {"GO": "DIRECT", "SPLIT_RECOMMENDED": "SPLIT", "DEFER": "DEFER"}
+RFC3339_TIMESTAMP = re.compile(
+    r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?"
+    r"(?:[Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"
+)
 
 
 def _validate_context(task_context: dict[str, Any] | None) -> None:
@@ -135,9 +140,15 @@ def validate_budget_context(budget_context: Any) -> tuple[Decimal, Decimal]:
         raise ValueError("budget_context must be an object")
     remaining = _ratio(budget_context.get("remaining_ratio"), "remaining_ratio", max_value=1)
     task = _ratio(budget_context.get("estimated_task_ratio"), "estimated_task_ratio")
-    for key in ("snapshot_at", "scope"):
-        if not isinstance(budget_context.get(key), str) or not budget_context[key].strip():
-            raise ValueError(f"{key} must be a non-empty string")
+    snapshot_at = budget_context.get("snapshot_at")
+    if not isinstance(snapshot_at, str) or not RFC3339_TIMESTAMP.fullmatch(snapshot_at):
+        raise ValueError("snapshot_at must be an RFC 3339 timestamp with UTC offset")
+    try:
+        datetime.fromisoformat(snapshot_at.upper().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("snapshot_at must be an RFC 3339 timestamp with UTC offset") from exc
+    if not isinstance(budget_context.get("scope"), str) or not budget_context["scope"].strip():
+        raise ValueError("scope must be a non-empty string")
     return remaining, task
 
 

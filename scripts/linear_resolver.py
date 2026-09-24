@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from linear_backend import BackendError, LinearBackend, OrcaLinearBackend, RunCommand
+from linear_backend import BackendError, LinearBackend
 
 
 URL_PATTERN = re.compile(r"https?://[^\s)>]+")
@@ -24,16 +24,12 @@ class Resolution:
 class LinearResolver:
     """Normalize fetched Linear source without task or budget decisions."""
 
-    def __init__(
-        self, backend: LinearBackend | None = None, *, run_command: RunCommand | None = None,
-    ) -> None:
-        if backend is not None and run_command is not None:
-            raise ValueError("provide backend or run_command, not both")
-        self._backend = backend or (
-            OrcaLinearBackend(run_command=run_command) if run_command is not None else OrcaLinearBackend()
-        )
+    def __init__(self, backend: LinearBackend | None = None) -> None:
+        self._backend = backend
 
     def resolve(self, identifier: str) -> Resolution:
+        if self._backend is None:
+            return self._unresolved(identifier)
         outcome = self._backend.fetch_issue(identifier)
         if isinstance(outcome, BackendError):
             if outcome.code == "partial":

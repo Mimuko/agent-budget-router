@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+import linear_backend  # noqa: E402
 import skill_orchestrator  # noqa: E402
 from linear_backend import BackendError, BackendIssue  # noqa: E402
 from linear_resolver import LinearResolver  # noqa: E402
@@ -104,6 +105,22 @@ def test_linear_backend_injection_normalizes_source_identity():
     assert resolved.task_context["related_links"] == [
         "https://linear.app/issue/MY-172", "https://example.test/spec",
     ]
+
+
+def test_default_resolvers_leave_linear_unresolved_without_orca_cli(monkeypatch):
+    def must_not_run(*_args, **_kwargs):
+        raise AssertionError("default resolver must not call Orca CLI")
+
+    monkeypatch.setattr(linear_backend.subprocess, "run", must_not_run)
+    monkeypatch.setattr(linear_backend.OrcaLinearBackend, "fetch_issue", must_not_run)
+    direct = LinearResolver().resolve("MY-172")
+    reference = ReferenceResolver().resolve("MY-172を実装して")
+
+    assert direct.reference["resolution_status"] == "UNRESOLVED"
+    assert direct.task_context is None
+    assert reference.resolution_status == "UNRESOLVED"
+    assert reference.task_context is None
+    assert reference.source_identity is None
 
 
 def test_reference_resolver_skips_backend_without_reference():

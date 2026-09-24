@@ -12,6 +12,7 @@ SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import host_adapter  # noqa: E402
+from linear_backend import OrcaLinearBackend  # noqa: E402
 from linear_resolver import LinearResolver, Resolution  # noqa: E402
 
 
@@ -120,7 +121,7 @@ def test_unresolved_linear_reference_uses_default_ask_policy():
     assert result["forward"]["allowed"] is False
 
 
-def test_linear_resolver_normalizes_issue_without_persisting_its_body():
+def test_explicit_orca_backend_normalizes_issue_without_persisting_its_body():
     payload = {
         "result": {
             "issue": {
@@ -132,11 +133,15 @@ def test_linear_resolver_normalizes_issue_without_persisting_its_body():
         }
     }
 
-    def run_command(*_args, **_kwargs):
+    calls = []
+
+    def run_command(*args, **kwargs):
+        calls.append((args, kwargs))
         return subprocess.CompletedProcess([], 0, json.dumps(payload), "")
 
-    resolution = LinearResolver(run_command=run_command).resolve("MY-172")
+    resolution = LinearResolver(backend=OrcaLinearBackend(run_command=run_command)).resolve("MY-172")
 
+    assert calls[0][0][0][:3] == ["orca", "linear", "issue"]
     assert resolution.reference["resolution_status"] == "RESOLVED"
     assert resolution.task_context == {
         "title": "Portable visual direction skill",

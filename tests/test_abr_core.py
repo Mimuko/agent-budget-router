@@ -130,6 +130,29 @@ def test_invalid_budget_context_fails(bad):
         abr_core.route(task_estimate(), bad)
 
 
+@pytest.mark.parametrize("snapshot_at", [
+    "not-a-timestamp",
+    "2026-09-24",
+    "2026-09-24T02:00:00",
+    "2026-13-24T02:00:00Z",
+    "2026-09-24T02:00:00+24:00",
+    "2026-09-24 02:00:00Z",
+])
+def test_invalid_snapshot_at_is_rejected(snapshot_at):
+    with pytest.raises(ValueError, match="snapshot_at"):
+        abr_core.route(task_estimate(), {**budget(0.5, 0.1), "snapshot_at": snapshot_at})
+
+
+@pytest.mark.parametrize("snapshot_at", [
+    "2026-09-24T02:00:00Z",
+    "2026-09-24T11:00:00+09:00",
+    "2026-09-23T21:00:00.123-05:00",
+])
+def test_valid_rfc3339_snapshot_at_is_accepted(snapshot_at):
+    result = abr_core.route(task_estimate(), {**budget(0.5, 0.1), "snapshot_at": snapshot_at})
+    assert result["recommended_policy"] == "DIRECT"
+
+
 def test_estimated_task_ratio_above_one_is_valid():
     assert abr_core.route(task_estimate(), budget(0.5, 1.2))["recommended_policy"] == "DEFER"
 
