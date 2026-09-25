@@ -1,47 +1,38 @@
 # Agent Budget Router
 
-> **Estimate before you agent.**
+> **Agentへ渡す前に見積もる。**
 
-Estimate token usage, task complexity, and an appropriate model/lane
-before handing a large task to an AI coding agent.
+大きなタスクをAI coding agentへ渡す前に、token使用量、タスクの複雑さ、適切なmodel/laneを見積もる。
 
-## Why this exists
+## 目的
 
-I gave a large AgentPlugin implementation task to a high-end agent model
-and burned through the entire usage allowance before I could tell
-whether the model was actually better.
+大きなAgentPlugin実装タスクを高性能なagent modelへ渡したところ、そのmodelが本当に優れているか判断する前に利用枠を使い切った。
 
-## Key idea
+## 基本の考え方
 
 ```text
 Repository size ≠ Expected agent context
 ```
 
-A 1M-line repo with a one-file CSS fix is not the same as a 20-file
-repo-wide architecture redesign. This skill estimates what the agent is
-likely to *read and re-read*, not your whole workspace.
+1M行のrepoで1ファイルのCSSを修正する作業は、20ファイルにまたがるrepo全体のarchitecture redesignとは異なる。
+このSkillはworkspace全体ではなく、agentが*読む・読み直す*可能性の高い範囲を見積もる。
 
-## Distribution
+## 配布
 
-| Package | Files | Use with |
+| パッケージ | ファイル | 使用先 |
 |---------|-------|----------|
 | Cursor Skill (MVP) | `SKILL.md`, `references/`, `scripts/`, `catalog/` | Cursor Agent |
 | OpenAI Skill compatible | + `agents/openai.yaml` | ChatGPT / Codex skill packages |
 
-`scripts/abr.py` is the canonical daily CLI. Use it for the normal
-`route → finish → stats` workflow; it keeps local state under
-`~/.agent-budget-router/` and never stores prompts, transcripts, source code,
-or credentials. The other scripts are auxiliary: `estimate.py` is the
-backward-compatible standalone estimator, `compare_runs.py` is for controlled
-Cursor/API-versus-Codex comparisons, and `scan_workspace.py` is an optional
-input helper for estimation. They do not replace `abr.py` for daily routing.
+`scripts/abr.py`が日常運用のcanonical CLIである。通常の`route → finish → stats` workflowに使い、local stateを`~/.agent-budget-router/`に保持するが、prompt、transcript、source code、credentialは保存しない。
+他のscriptは補助用で、`estimate.py`は後方互換のstandalone estimator、`compare_runs.py`はCursor/APIとCodexの比較用、`scan_workspace.py`は見積用の任意input helperである。日常のroutingでは`abr.py`を置き換えない。
 
 Skill正規入口の責務・入出力・参照解決は、[Skill契約](references/skill-contract.md)、
 [共通I/O契約](references/io-contract.md)、[Resolver契約](references/resolver-contract.md)を正本とする。
 旧Host AdapterのI/Oは、[互換契約](../docs/architecture/host-adapter-contract.md)を参照する。
 Cursor / Codex / Orcaの薄いshimと、同一プロセスで確認を再開するJSONL手順は[Host shim PoC](shims/README.md)を参照する。
 
-### Deprecated Cursor Hook PoC
+### deprecated Cursor Hook PoC
 
 旧 `beforeSubmitPrompt` 用の実装 `.cursor/hooks/abr_before_submit.py` は移行資料として残っているが、
 `.cursor/hooks.json` の `hooks` は空であり、Hookは無効化済みである。これはSkill v1の正規入口ではなく、
@@ -55,26 +46,26 @@ Skill v1の責務、I/O、Resolver境界、Linear Backend戦略、移行順序�
 PoCのLinear Resolverは、ログイン済みの `orca linear issue <id> --full --json` を利用する。
 GitHub / Backlog Resolver、Codex wrapper、App Server、実際のタスク分割は対象外である。
 
-## What it does
+## できること
 
-- Estimates **expected agent context** (not full repo token count)
-- Applies exploration multipliers for re-read / subagent loops
-- Returns **Go / Split / Defer** verdict
-- Recommends phased execution (plan → implement → review)
-- Separates model catalog from estimation logic
-- Routes daily work from estimated context, live Codex allowance, and local performance history
-- Keeps controlled Cursor → OpenAI API / Codex comparisons as a supporting analysis tool
+- **expected agent context**（repo全体のtoken数ではない）を見積もる
+- 読み直しやsubagent loopの探索係数を適用する
+- **Go / Split / Defer**の判定を返す
+- 段階的な実行（plan → implement → review）を推奨する
+- model catalogと見積ロジックを分離する
+- 見積context、Codexの現在の利用枠、local performance historyから日常作業をroutingする
+- Cursor → OpenAI API / Codexの制御比較を補助分析として保持する
 
-## What it does NOT do
+## しないこと
 
-- Switch your chat model for you
-- Guarantee billing accuracy
-- Replace your team's routing policy
+- chat modelを自動で切り替える
+- billing accuracyを保証する
+- teamのrouting policyを置き換える
 
-## Works well with
+## 相性のよい構成
 
 - [mimu-core](https://github.com/Mimuko/agent-plugins) routing-policy §7（役割）/ §8（Cursor Adapter, optional）
-- Cursor subagents with pinned `model` + `effort` / `speed` in catalog
+- catalogで`model` + `effort` / `speed`を固定したCursor subagents
 
 ## 使い方（通常運用）
 
@@ -262,33 +253,33 @@ python scripts/abr.py record `
 `stats`で同種タスクの中央値と受入率を確認し、3件未満は低〜中信頼度、6件以上の帰属可能な
 実測差分で高信頼度として次回の推定へ反映する。
 
-## Quick start（従来の見積コマンド）
+## クイックスタート（従来の見積コマンド）
 
-### Cursor
+### Cursorで使う
 
 ```bash
-# Install
+# インストール
 git clone https://github.com/Mimuko/agent-budget-router.git \
   ~/.cursor/skills/agent-budget-router
 
-# Or symlink from this monorepo
+# またはこのmonorepoからsymlinkを作成
 ln -s "$(pwd)/agent-budget-router" ~/.cursor/skills/agent-budget-router
 ```
 
-In Cursor Agent chat:
+Cursor Agent chatで:
 
 ```text
-Estimate this task before agent:
-Implement a new HubSpot module for the pricing table component.
+Agentへ渡す前にこのタスクを見積もる:
+pricing table component用の新しいHubSpot moduleを実装する。
 ```
 
-Or run the script directly:
+またはscriptを直接実行する:
 
 ```bash
 python scripts/estimate.py "Fix typo in README.md" --json
 ```
 
-### With workspace scan (optional)
+### workspace scanを使う場合（任意）
 
 ```bash
 python scripts/scan_workspace.py --root . --hint mimu-core/ --json > /tmp/scan.json
@@ -296,19 +287,19 @@ python scripts/estimate.py "Refactor routing-policy across plugins" \
   --scan-json /tmp/scan.json --skill-count 8
 ```
 
-## Architecture
+## 構成
 
 ```text
 User task
   → agent-budget-router (pre-flight estimate)
     → Go / Split / Defer
-      → routing-policy Lanes (post-decision delegation)
+    → routing-policy Lanes（判定後のdelegation）
         → implementer | analyst-planner | cross-reviewer
 ```
 
-## Catalog design
+## Catalog設計
 
-Model identity and runtime settings are separated:
+model identityとruntime settingsを分離する:
 
 ```yaml
 # catalog/models.default.yaml
@@ -325,9 +316,9 @@ lanes:
     speed: standard
 ```
 
-No synthetic IDs like `cursor-grok-4.6-high-fast` in the catalog.
+`cursor-grok-4.6-high-fast`のようなsynthetic IDはcatalogに置かない。
 
-## Estimation formula
+## 見積式
 
 ```text
 Estimated Context
@@ -337,26 +328,26 @@ Estimated Context
   + Re-read / exploration factor
 ```
 
-Exploration multipliers (v1):
+探索係数（v1）:
 
-| Pattern | Multiplier |
+| パターン | 係数 |
 |---------|------------|
 | single-file edit | ×1.1 – 1.3 |
 | known feature area | ×1.3 – 1.6 |
 | cross-cutting change | ×1.5 – 2.0 |
 | architecture / unknown repo | ×1.8 – 3.0 |
 
-Details: [references/estimation-rules.md](references/estimation-rules.md)
+詳細: [references/estimation-rules.md](references/estimation-rules.md)
 
-## Examples
+## 例
 
-| Example | Verdict | Pattern |
+| 例 | 判定 | パターン |
 |---------|---------|---------|
 | [small-fix.md](examples/small-fix.md) | GO | single-file edit |
 | [feature-build.md](examples/feature-build.md) | GO | known feature area |
 | [large-agent-task.md](examples/large-agent-task.md) | SPLIT_RECOMMENDED | architecture |
 
-## Development
+## 開発
 
 ```bash
 python -m pytest tests/
@@ -365,25 +356,19 @@ python scripts/compare_runs.py --cursor examples/measurements/cursor-api.json \
   --codex examples/measurements/codex-included-plan.json
 ```
 
-## Observed cost comparison
+## 実測コストの比較
 
-After running the same task through both routes, record only the observed usage,
-completion, elapsed time, and quality score. Then run `compare_runs.py`.
+同じタスクを両方のrouteで実行した後、実測usage、completion、elapsed time、quality scoreだけを記録し、`compare_runs.py`を実行する。
 
-- Cursor API: use the observed `api_cost_usd`; if unavailable, provide the
-  observed input / cached-input / output tokens and the rates that applied then.
-- Codex: record whether the run used included plan allowance or additional
-  credits. Included allowance is not treated as a zero-dollar task price.
-- A route recommendation is emitted only when both tasks completed at comparable
-  quality and both marginal USD values are available.
+- Cursor API: 実測した`api_cost_usd`を使う。ない場合は、実測input / cached-input / output tokenと、その時点で適用されたrateを指定する。
+- Codex: included plan allowanceか追加creditsかを記録する。included allowanceをzero-dollarのタスク価格として扱わない。
+- 両タスクが同程度のqualityで完了し、両方のmarginal USD valueが得られた場合だけroute recommendationを出す。
 
-See [measurement schema](references/measurement-schema.md) and runnable
-[examples](examples/measurements/).
+詳細は[measurement schema](references/measurement-schema.md)と実行可能な[examples](examples/measurements/)を参照する。
 
-## Daily routing
+## 日常のrouting
 
-Use `abr.py` as the normal interface; `compare_runs.py` is for the initial
-paired experiments only.
+通常のinterfaceには`abr.py`を使い、`compare_runs.py`は初回のpaired experimentだけに使う。
 
 ```bash
 python scripts/abr.py route "repo全体をレビューしてIssue候補を作る"
@@ -394,38 +379,26 @@ python scripts/abr.py finish <preflight-id> \
 python scripts/abr.py stats
 ```
 
-`abr route` estimates the task as before, reads the currently logged-in Codex
-plan/rate-limit state through `codex app-server`, and applies median facts from
-prior runs of the same task class. It recommends `CODEX` at medium confidence
-when plan allowance is available; confidence becomes high after three accepted
-comparable Codex runs. It does not claim that a fixed ChatGPT plan has a zero
-per-task price.
+`abr route`は従来どおりタスクを見積もり、`codex app-server`で現在ログイン中のCodexのplan/rate-limit状態を読み、同じtask classの過去実行から中央値を適用する。
+plan allowanceが利用できる場合はmedium confidenceで`CODEX`を推奨し、比較可能なCodex実行が3件受け入れられるとconfidenceがhighになる。固定ChatGPT planのタスク単価がzeroとは扱わない。
 
-The route result is also a preflight budget gate:
+route結果はpreflight budget gateでもある:
 
-- `NORMAL / AUTO_EXECUTE`: low estimated impact, enough remaining allowance,
-  and high-confidence comparable history.
-- `CONFIRM / ASK_USER`: moderate impact or incomplete calibration.
-- `WARN / SUGGEST_ALTERNATIVE`: high impact, low remaining allowance, or no
-  readable live allowance.
+- `NORMAL / AUTO_EXECUTE`: 推定影響が低く、残利用枠が十分で、比較可能な履歴のconfidenceがhigh。
+- `CONFIRM / ASK_USER`: 影響が中程度、またはcalibrationが不十分。
+- `WARN / SUGGEST_ALTERNATIVE`: 影響が高い、残利用枠が少ない、または現在の利用枠を読めない。
 
-Allowance impact is always shown as a range. Before attributable history
-exists, a conservative task-class prior is marked `LOW` confidence. Three
-attributable runs raise it to `MEDIUM`; six raise it to `HIGH`.
+Allowance impactは常にrangeで表示する。帰属可能な履歴がない間は保守的なtask-class priorを`LOW` confidenceとする。帰属可能な実行が3件で`MEDIUM`、6件で`HIGH`になる。
 
-To automatically retain a privacy-safe Codex account snapshot (current plan
-allowance and global token-activity summary), run this before/after a work
-session or from an automation hook:
+privacy-safeなCodex account snapshot（現在のplan allowanceとglobal token-activity summary）を自動保存するには、work sessionの前後またはautomation hookから次を実行する:
 
 ```bash
 python scripts/abr.py capture-codex
 ```
 
-The snapshot is global account telemetry, not a per-task attribution. The
-router never silently assigns unrelated concurrent usage to a task.
+snapshotはglobal account telemetryであり、タスクごとの帰属ではない。routerは無関係な並行usageをタスクへ黙って割り当てない。
 
-`route` saves a privacy-safe before snapshot and prints a Preflight ID. Close it
-after execution to capture the after snapshot and observed account delta:
+`route`はprivacy-safeなbefore snapshotを保存してPreflight IDを表示する。実行後に閉じるとafter snapshotと実測account deltaを取得する:
 
 ```bash
 python scripts/abr.py finish <preflight-id> \
@@ -433,12 +406,9 @@ python scripts/abr.py finish <preflight-id> \
   --tests passed --parallel-activity none
 ```
 
-Only `--parallel-activity none` produces a high-confidence task-attributable
-delta. `detected` and `unknown` remain account-level observations and are not
-used to calibrate the next task estimate.
+タスクに帰属できるdeltaをhigh confidenceとして扱えるのは`--parallel-activity none`だけである。`detected`と`unknown`はaccount-level observationとして残し、次のタスク見積のcalibrationには使わない。
 
-For Cursor API cost estimates, configure the current rates once (this writes
-internal local state; you do not create a JSON file):
+Cursor API cost estimateでは、現在のrateを一度設定する（internal local stateを書き込むが、JSON fileは作成しない）:
 
 ```bash
 python scripts/abr.py configure \
@@ -446,12 +416,9 @@ python scripts/abr.py configure \
   --cached-input-ratio 0.2
 ```
 
-Use the rates applicable to the actual Cursor API model at the time; the
-router intentionally does not embed volatile price data.
+実際に使うCursor API modelにその時点で適用されるrateを指定する。routerは変動する価格データを意図的に埋め込まない。
 
-If an automation hook cannot create or close a preflight, use `record` as the
-alternative outcome-only path. Do not use `record` and `finish` for the same
-run; `finish` is the canonical path when a preflight exists.
+automation hookがpreflightを作成または終了できない場合は、結果だけを記録する代替経路として`record`を使う。同じrunで`record`と`finish`を併用しない。preflightがある場合のcanonical pathは`finish`である。
 
 ```bash
 python scripts/abr.py record --task-class repository_review \
@@ -459,10 +426,8 @@ python scripts/abr.py record --task-class repository_review \
   --elapsed-minutes 12 --tests passed --lint passed --build passed
 ```
 
-The local history contains no prompts, transcripts, source code, or secrets.
-`quality_score` is optional; acceptance criteria and test/lint/build results
-are the primary performance signals.
+local historyにはprompt、transcript、source code、secretを保存しない。`quality_score`は任意であり、acceptance criteriaとtest/lint/build結果を主要なperformance signalとする。
 
-## License
+## ライセンス
 
-MIT — see [LICENSE](LICENSE)
+MIT — [LICENSE](LICENSE)を参照

@@ -77,7 +77,7 @@ Skillはstdinで`y/N`を取得すること、コード変更、Issue分割、Age
 }
 ```
 
-## 正本references
+## 正本リファレンス
 
 - [Skill責務・フロー](references/skill-contract.md)
 - [共通I/O・状態・policy](references/io-contract.md)

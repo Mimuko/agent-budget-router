@@ -1,8 +1,8 @@
-# Skill正規入口へのMigration
+# Skill正規入口への移行
 
-> Status: Skill v1 migration PoC complete. Production Linear Backend selection remains pending.
+> 状態: Skill v1移行PoCは完了。正式なLinear Backendの選定は未完了。
 >
-> This document records the current migration state. The contracts linked below are authoritative for runtime behavior.
+> 本書は現在の移行状態を記録する。実行時の正本は以下の契約文書とする。
 
 ## 現在の構成
 
@@ -20,7 +20,7 @@ Skill v1の正規入口は、ユーザーまたは呼び出し元Agentによる�
 | [approval-resume-contract.md](../../docs/architecture/approval-resume-contract.md) | 旧非同期Hook経路の互換資料。Skill v1の確認・再検証契約は `skill-contract.md` が正本 |
 | Cursor `beforeSubmitPrompt` Hook | `.cursor/hooks.json` では無効化済み。Skill v1の正規入口ではなく、残る旧実装はdeprecatedな互換・移行資産として扱う |
 
-Orca Linear Backendは開発PoC用fallbackであり、Cursor / Codexの実機確認では明示設定して使用した。通常利用にOrcaを必須とせず、production backendの決定はread-only Spike後まで保留する。この保留はPoCの完了条件と矛盾しない。
+Orca Linear Backendは開発PoC用fallbackであり、Cursor / Codexの実機確認では明示設定して使用した。通常利用にOrcaを必須とせず、本番backendの決定はread-only Spike後まで保留する。この保留はPoCの完了条件と矛盾しない。
 
 ## 完了済みの移行ステップ
 
@@ -46,12 +46,12 @@ MY-215のPoC確認結果:
 - 旧Hook / Host Adapter契約は互換資料として残す。これらはSkill v1の共通I/Oやworkflow判定を変更しない。
 - 旧Hookや旧出力形式を削除する作業はこのPoCに含めない。移行先の利用実績と互換要件を確認してから、別途削除を判断する。
 
-## 今後の作業
+## 残課題
 
 - Linear Backend候補をread-onlyで比較し、正式Primary、認証方式、fallback方針を決定記録へ反映する。
 - 旧Hook / Host Adapterの削除要否を、Skill v1への移行実績と互換要件に基づいて判断する。
 
-production backendの選定、Hook廃止、運用実績に依存する判断はPoC完了後の作業であり、MY-212の現行PoC完了条件には含めない。
+production backendの選定、Hook廃止、運用実績に依存する判断はSkill v1移行完了を阻害しない。MY-212の完了条件には含めない。
 
 ## 非対象
 
@@ -59,4 +59,4 @@ production backendの選定、Hook廃止、運用実績に依存する判断はP
 - Cursor Command / MCP App / Agent Window統合
 - Codex wrapperの自動起動
 - Skillによるコード変更・Issue分割・Agent起動
-- read-only Spike前のproduction Linear Backend選定・本番接続
+- read-only Spike前の本番Linear Backend選定・本番接続
