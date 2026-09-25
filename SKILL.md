@@ -32,7 +32,14 @@ transparent Hook、通常チャットの自動横取り、Agentの自動起動�
 8. 承認結果を同一workflowへ戻し、ResolverとABR判定を再検証してから`READY`を返す。
 9. 実装・実行は呼び出し元Agentが行う。
 
+確認が必要な場合、shimは同じOrchestrator sessionを保持する。利用者の承認を受けたら、
+元のpromptとscopeを保ったまま`approved: true`を一度だけ返す。OrchestratorはLinearを再取得し、
+source identityとCore判定が初回と一致する場合だけ`READY / forward.allowed=true`にする。
+変更・不一致・取得失敗では転送を許可しない。承認は別のSkill呼び出しへ持ち越さない。
+
 Skillはstdinで`y/N`を取得すること、コード変更、Issue分割、Agent / Model起動、Host固有UI操作を行わない。
+呼び出し元shimから共通Orchestratorへ渡すJSONL session protocolと、Cursor / Codex / Orcaの対応付けは
+[`shims/README.md`](shims/README.md)を参照する。
 
 ## 共通結果
 

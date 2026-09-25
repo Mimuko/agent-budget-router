@@ -15,10 +15,10 @@ Skill v1の正規入口は、ユーザーまたは呼び出し元Agentによる�
 | Reference Resolver | 参照抽出、Provider選択、取得結果の正規化を担当。`task_context` と `source_identity` を区別 |
 | Linear Backend interface | Resolverから利用するinterfaceとして分離済み。正式Primary backendは未選定 |
 | Skill Orchestrator | Resolver → Core判定 → workflow状態・転送可否の調停を担当 |
-| Agent別shim | invocation、登録、共通I/Oへの変換、確認UI、結果表示を担当。Core判定とProvider接続は持たない |
-| `host-adapter-contract.md` | 旧Hook / Host Adapterとの互換・移行資料 |
-| `approval-resume-contract.md` | 旧非同期Hook経路の互換資料。Skill v1の確認・再検証契約は `skill-contract.md` が正本 |
-| Cursor Hook Adapter / transparent Hook | deprecated。Skill v1の正規入口にはしない。利用実績確認後に削除可否を判断 |
+| Agent別shim | invocation、登録、共通I/Oへの変換、確認UI、session handling、結果表示を担当。Core判定とProvider接続は持たない |
+| [host-adapter-contract.md](../../docs/architecture/host-adapter-contract.md) | deprecatedな旧Hook / Host Adapterとの互換・移行資料。即削除しない |
+| [approval-resume-contract.md](../../docs/architecture/approval-resume-contract.md) | 旧非同期Hook経路の互換資料。Skill v1の確認・再検証契約は `skill-contract.md` が正本 |
+| Cursor `beforeSubmitPrompt` Hook | `.cursor/hooks.json` では無効化済み。Skill v1の正規入口ではなく、残る旧実装はdeprecatedな互換・移行資産として扱う |
 
 Orca Linear Backendは開発PoC用fallbackであり、Cursor / Codexの実機確認では明示設定して使用した。通常利用にOrcaを必須とせず、production backendの決定はread-only Spike後まで保留する。この保留はPoCの完了条件と矛盾しない。
 
@@ -42,7 +42,7 @@ MY-215のPoC確認結果:
 
 ## 旧Hook経路の扱い
 
-- transparent Hookは正規入口ではなく、明示Skill invocationへ移行済み。
+- transparent Hookは有効な入口として使わず、Skill v1は明示Skill invocationを正規入口とする。旧Cursor `beforeSubmitPrompt` Hookは無効化済み。
 - 旧Hook / Host Adapter契約は互換資料として残す。これらはSkill v1の共通I/Oやworkflow判定を変更しない。
 - 旧Hookや旧出力形式を削除する作業はこのPoCに含めない。移行先の利用実績と互換要件を確認してから、別途削除を判断する。
 

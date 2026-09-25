@@ -85,7 +85,10 @@ TaskEstimate由来のtask sizing理由、`preflight.recommendation_reason`はrou
 budgetが推奨を引き上げた場合はbudget理由コードを、budget_context未提供時は
 `budget_unavailable`を`recommendation_reason`に入れる。
 トップレベル`execution_policy`はworkflow上の扱い（`DIRECT | CONFIRM_FIRST | SPLIT | DEFER`）を表す。
-Orchestratorが`DIRECT`を`CONFIRM_FIRST`で包んでもCore推奨は`preflight`内に残す。
+Skill v1は利用者の確認を必須にするため、Coreの`DIRECT`または`SPLIT`推奨を
+トップレベル`CONFIRM_FIRST`で包み、Core推奨は`preflight.recommended_policy`に残す。
+承認後のREADYは呼び出し元へタスクを渡す許可を意味し、分割内容の作成・Issue作成はSkillが行わない。
+`DEFER`は確認だけで実行可能にならないため、トップレベルも`DEFER`のままにする。
 
 `agent_action`は独立フィールドとして保持しない。必要な表示・分岐は`state`、`execution_policy`、`forward.allowed`から呼び出し元Agentが派生する。
 
@@ -103,7 +106,8 @@ Orchestratorが`DIRECT`を`CONFIRM_FIRST`で包んでもCore推奨は`preflight`
 - `NEEDS_CONFIRMATION`と`BLOCKED`は`forward.allowed=false`のみ。
 - `CONFIRM_FIRST`未承認は`NEEDS_CONFIRMATION`、承認・再検証後のみ`READY`。
 - Coreの`recommended_policy = DIRECT`はworkflow上`CONFIRM_FIRST`で包める。
-- `SPLIT`は分割計画が呼び出し元Agentで承認されるまで転送不可。
+- トップレベル`execution_policy = SPLIT`の場合は分割計画が呼び出し元Agentで承認されるまで転送不可。
+- Skill v1ではCoreの`recommended_policy = SPLIT`を`preflight`に保持し、利用者承認のworkflow gateはトップレベル`CONFIRM_FIRST`で表す。READY後の推奨適用は呼び出し元Hostの責務で、Skillは分割内容やIssueを生成しない。
 - `DEFER`は承認だけで`READY`へ遷移しない。
 
 `INPUT_UNAVAILABLE`、`UNRESOLVED`、`PARTIALLY_RESOLVED`の状態マッピングは上記policyから

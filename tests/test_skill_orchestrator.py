@@ -1,5 +1,7 @@
 """Skill v1 orchestration and Resolver boundary tests."""
 
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -80,8 +82,9 @@ def test_preflight_estimates_once_and_passes_same_task_estimate(monkeypatch):
     assert result["preflight"]["base_reason"] == "feature_build"
     assert result["preflight"]["recommendation_reason"] == "budget_limited"
     assert (result["state"], result["execution_policy"], result["forward"]["allowed"]) == (
-        "NEEDS_CONFIRMATION", "SPLIT", False,
+        "NEEDS_CONFIRMATION", "CONFIRM_FIRST", False,
     )
+    assert result["preflight"]["recommended_policy"] == "SPLIT"
 
 
 def test_linear_backend_injection_normalizes_source_identity():
@@ -159,3 +162,76 @@ def test_unavailable_budget_uses_base_reason_without_changing_workflow_reason(mo
     assert result["preflight"]["recommendation_reason"] == "budget_unavailable"
     assert result["execution_policy"] == "CONFIRM_FIRST"
     assert result["forward"]["allowed"] is False
+
+
+def test_approval_re_resolves_same_request_and_returns_ready_once():
+    class RevisionBackend:
+        revision = "r1"
+
+        def fetch_issue(self, identifier):
+            return BackendIssue({
+                "id": "native", "identifier": identifier, "title": "A sufficiently large feature",
+                "description": "Update several components and verify behavior.",
+                "url": "https://linear.app/issue/MY-172", "updatedAt": self.revision,
+            })
+
+    backend = RevisionBackend()
+    workflow = skill_orchestrator.SkillWorkflow(
+        resolver=ReferenceResolver({"linear": LinearResolver(backend=backend)}),
+    )
+    request = {"prompt": "MY-172を実装して", "prompt_available": True,
+               "workspace_scope": "workspace-1", "repository_scope": "repo-1"}
+
+    pending = workflow.start(request)
+    assert pending["state"] == "NEEDS_CONFIRMATION"
+    ready = workflow.resume(request, approved=True)
+    assert (ready["state"], ready["forward"]["allowed"]) == ("READY", True)
+    try:
+        workflow.resume(request, approved=True)
+    except ValueError as exc:
+        assert "no pending confirmation" in str(exc)
+    else:
+        raise AssertionError("approval must be single-use")
+
+
+def test_approval_is_rejected_when_linear_source_changes():
+    class RevisionBackend:
+        revision = "r1"
+
+        def fetch_issue(self, identifier):
+            return BackendIssue({
+                "id": "native", "identifier": identifier, "title": "A sufficiently large feature",
+                "description": "Update several components and verify behavior.",
+                "url": "https://linear.app/issue/MY-172", "updatedAt": self.revision,
+            })
+
+    backend = RevisionBackend()
+    workflow = skill_orchestrator.SkillWorkflow(
+        resolver=ReferenceResolver({"linear": LinearResolver(backend=backend)}),
+    )
+    request = {"prompt": "MY-172を実装して", "prompt_available": True}
+    assert workflow.start(request)["state"] == "NEEDS_CONFIRMATION"
+    backend.revision = "r2"
+    changed = workflow.resume(request, approved=True)
+    assert changed["state"] == "NEEDS_CONFIRMATION"
+    assert changed["forward"]["allowed"] is False
+
+
+def test_jsonl_session_returns_shared_contract_for_start_and_approval():
+    script = Path(skill_orchestrator.__file__)
+    messages = [
+        {"action": "start", "request": {"prompt": "MY-172を実装して", "prompt_available": True}},
+        {"action": "resume", "request": {"prompt": "MY-172を実装して", "prompt_available": True}, "approved": True},
+    ]
+    completed = subprocess.run(
+        [sys.executable, str(script), "--session"], input="\n".join(map(json.dumps, messages)) + "\n",
+        text=True, capture_output=True, check=True,
+    )
+    initial, resumed = map(json.loads, completed.stdout.splitlines())
+    assert (initial["decision"], initial["resolution_status"], initial["state"],
+            initial["execution_policy"], initial["forward"]["allowed"]) == (
+        "INPUT_UNAVAILABLE", "UNRESOLVED", "NEEDS_CONFIRMATION", "CONFIRM_FIRST", False,
+    )
+    assert (resumed["state"], resumed["execution_policy"], resumed["forward"]["allowed"]) == (
+        "READY", "CONFIRM_FIRST", True,
+    )

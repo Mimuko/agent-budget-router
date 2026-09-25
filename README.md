@@ -39,12 +39,13 @@ input helper for estimation. They do not replace `abr.py` for daily routing.
 Skill正規入口の責務・入出力・参照解決は、[Skill契約](references/skill-contract.md)、
 [共通I/O契約](references/io-contract.md)、[Resolver契約](references/resolver-contract.md)を正本とする。
 旧Host AdapterのI/Oは、[互換契約](../docs/architecture/host-adapter-contract.md)を参照する。
+Cursor / Codex / Orcaの薄いshimと、同一プロセスで確認を再開するJSONL手順は[Host shim PoC](shims/README.md)を参照する。
 
 ### Deprecated Cursor Hook PoC
 
-このリポジトリには、`.cursor/hooks.json` の `beforeSubmitPrompt` が
-`.cursor/hooks/abr_before_submit.py` を呼ぶ旧互換PoCが残っている。これはSkill v1の正規入口ではなく、
-Cursor entrypointの実測・移行資料として扱う。透明なHook gateを新しい主経路として拡張しない。
+旧 `beforeSubmitPrompt` 用の実装 `.cursor/hooks/abr_before_submit.py` は移行資料として残っているが、
+`.cursor/hooks.json` の `hooks` は空であり、Hookは無効化済みである。これはSkill v1の正規入口ではなく、
+透明なHook gateを新しい主経路として拡張しない。
 
 ### Skill v1の正規入口
 
@@ -79,6 +80,11 @@ GitHub / Backlog Resolver、Codex wrapper、App Server、実際のタスク分�
 
 日常利用では `compare_runs.py` ではなく `abr.py` を使う。基本フローは
 `configure（初回のみ）→ route → 実行 → finish → stats`。
+
+共通Skillの入出力PoCは `scripts/skill_orchestrator.py --session` を使う。確認UIは呼び出し元Hostが担当し、
+承認後は同じプロセスへ元の要求と承認結果を返す。Cursor、Codex、Orca間でJSON契約と状態語彙は共通である。
+参照なしの小規模タスクは `SKIP / READY / DIRECT`、Linear参照タスクは解決後にCoreの推奨と確認状態を返す。
+Linear接続のOrca開発fallbackは `ABR_LINEAR_BACKEND=orca` を明示したときだけ有効になる。
 
 ### 0. 前提
 
