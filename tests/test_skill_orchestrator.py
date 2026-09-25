@@ -215,6 +215,9 @@ def test_approval_is_rejected_when_linear_source_changes():
     changed = workflow.resume(request, approved=True)
     assert changed["state"] == "NEEDS_CONFIRMATION"
     assert changed["forward"]["allowed"] is False
+    ready = workflow.resume(request, approved=True)
+    assert ready["state"] == "READY"
+    assert ready["forward"]["allowed"] is True
 
 
 def test_jsonl_session_returns_shared_contract_for_start_and_approval():

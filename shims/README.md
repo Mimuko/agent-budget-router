@@ -69,3 +69,23 @@ issues are returned as unresolved and the default `ask` policy prevents forwardi
 
 The common code and I/O contract define one result vocabulary. The Orca, Cursor, and Codex
 runtime checks covered Case A, Case B, approval to READY, and duplicate approval rejection.
+
+## Lifecycle and local state
+
+The Cursor and Codex persistent adapters use two intentional wait windows:
+
+- 600 seconds while waiting for the first approval command.
+- 120 seconds after each command while waiting for the next command.
+
+These windows are PoC transport limits, not approval or workflow policy. When a window expires,
+the worker terminates the child Orchestrator process and the session must be started again. A
+completed approval or rejection consumes the workflow; the worker remains available until the
+next-command timeout or a protocol error. A duplicate approval is rejected by the Orchestrator.
+
+The adapter writes `configuration.json`, command files, and response files under the local
+`.sessions/<id>/` directory. Configuration includes the task prompt and workspace/repository
+scope so the same request can be revalidated. Treat this directory as local sensitive state. It
+is ignored by Git, but the PoC does not yet provide automatic deletion or redaction after
+completion or timeout. Remove expired session directories according to the host's local
+retention policy. Automatic TTL cleanup and prompt/scope redaction are a follow-up item outside
+this PoC.

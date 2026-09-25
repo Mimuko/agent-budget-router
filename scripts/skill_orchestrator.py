@@ -159,9 +159,18 @@ class SkillWorkflow:
             request, resolver=self._resolver, budget_estimator=self._budget_estimator,
         )
         current_fingerprint = _approval_fingerprint(request, current, source_identity)
-        self._consumed = True
         if current_fingerprint != self._pending_fingerprint:
+            if current["state"] == "NEEDS_CONFIRMATION":
+                # The approval was for the previous evaluation. Keep the
+                # changed evaluation pending so the caller can approve the
+                # updated prompt/source in this same workflow.
+                self._pending_fingerprint = current_fingerprint
+                self._pending_result = current
+                self._consumed = False
+                return current
+            self._consumed = True
             return current
+        self._consumed = True
         if current["execution_policy"] == "CONFIRM_FIRST" and current["state"] == "NEEDS_CONFIRMATION":
             current["state"] = "READY"
             current["forward"] = {"allowed": True}
