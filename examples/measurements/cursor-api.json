@@ -1,0 +1,13 @@
+{
+  "task_id": "my-180-sample-01",
+  "execution": "cursor_openai_api",
+  "completion": "completed",
+  "elapsed_minutes": 18,
+  "quality_score": 4.5,
+  "api_cost_usd": 0.42,
+  "usage": {
+    "input_tokens": 64000,
+    "cached_input_tokens": 12000,
+    "output_tokens": 9000
+  }
+}
