@@ -24,6 +24,35 @@ Repository size ≠ Expected agent context
 | Cursor Skill (MVP) | `SKILL.md`, `references/`, `scripts/`, `catalog/` | Cursor Agent |
 | OpenAI Skill compatible | + `agents/openai.yaml` | ChatGPT / Codex skill packages |
 
+開発・統合の正本は monorepo `agent-plugins` の本ディレクトリ。公開配布先は別リポジトリ
+[`Mimuko/agent-budget-router`](https://github.com/Mimuko/agent-budget-router) である。
+merge までは自動化せず、人間が差分を確認してから配布先へ merge する。
+
+### 配布対象 / 非対象
+
+| 配布する（この package） | monorepo 側に残す |
+|:--|:--|
+| Core / Resolver / Orchestrator / `references/` / `catalog/` / `scripts/` / `tests/` / `examples/` | `.cursor/skills/agent-budget-router/`（Cursor Host shim） |
+| `shims/`（Host 共通契約） | `.agents/skills/agent-budget-router/`（Codex Host shim） |
+| `SKILL.md` / `README.md` / `LICENSE` / `agents/openai.yaml` など package 直下 | 他 Plugin・root marketplace・monorepo docs |
+
+### monorepo から配布先へ同期する
+
+repository root で実行する。
+
+```bash
+# 差分確認のみ（push / PR なし）
+bash scripts/sync-agent-budget-router-dist.sh --dry-run
+
+# sync branch を push し、配布先へ PR を作成
+bash scripts/sync-agent-budget-router-dist.sh
+```
+
+スクリプトは `git subtree split --prefix=agent-budget-router` で package だけを切り出し、
+Host 固有 shim が混入していないことを検証してから `sync/abr-<date>-<sha>` ブランチを
+`Mimuko/agent-budget-router` へ push し、`gh pr create` する。作業ツリーが dirty なときは
+失敗する（必要な場合だけ `--allow-dirty`）。
+
 `scripts/abr.py`が日常運用のcanonical CLIである。通常の`route → finish → stats` workflowに使い、local stateを`~/.agent-budget-router/`に保持するが、prompt、transcript、source code、credentialは保存しない。
 他のscriptは補助用で、`estimate.py`は後方互換のstandalone estimator、`compare_runs.py`はCursor/APIとCodexの比較用、`scan_workspace.py`は見積用の任意input helperである。日常のroutingでは`abr.py`を置き換えない。
 
