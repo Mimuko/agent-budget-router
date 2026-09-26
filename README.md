@@ -2,6 +2,25 @@
 
 > **Agentへ渡す前に見積もる。**
 
+## Cursor / CodexのUser scopeへインストール
+
+配布リポジトリをcloneした後、PowerShellで実行する。Python 3が必要。
+
+```powershell
+git clone https://github.com/Mimuko/agent-budget-router.git
+cd agent-budget-router
+./install.ps1 install
+./install.ps1 update      # 配布repoを更新した後
+./install.ps1 uninstall   # 管理下のインストールを削除
+./install.ps1 rollback    # 直前の版を復元
+```
+
+インストーラは共有Coreを`~/.agent-budget-router/agent-budget-router/`へ1部、Cursor shimを`~/.cursor/skills/agent-budget-router/`、Codex shimを`~/.agents/skills/agent-budget-router/`へ配置する。`~`は実行ユーザーのhome。案件repoへはコピーしない。既存の管理外Skillやsymlinkは上書きせず停止する。更新・削除の前の版は`~/.agent-budget-router/backups/`に保持し、`rollback`で復元できる。Skillの再読込には新しいCursor/Codex sessionを開始する。
+
+Cursorの公式探索先はprojectの`.cursor/skills/`とUserの`~/.cursor/skills/`、Codexの公式探索先はrepoの`.agents/skills/`とUserの`~/.agents/skills/`。[Cursor Skills](https://prod.cursor.com/docs/skills)、[OpenAI Docs: Build skills](https://learn.chatgpt.com/docs/build-skills)を参照。Codexでは同名Skillは結合されず、双方が候補に出る。Cursorは互換性のため`~/.agents/skills/`も探索し、実機では同名のCodex shimを選ぶケースを確認した。User配布版のCodex shimにはCursorで選ばれたときCursor shimへ誘導する手順を含める。Cursorの同名Skillについて公式資料に選択優先順位の保証は見当たらない。このため開発checkoutで確実にworkspace-local版を使うときは、Skill候補のパスを確認し、`.cursor/skills/agent-budget-router/`または`.agents/skills/agent-budget-router/`のadapterを明示実行する。User版shimはインストール済みCoreを参照し、workspace-local版shimはcheckout内のCoreを参照する。通常案件やOrca workspaceではUser版を使う。
+
+ローカルのCursor AgentにはUser Skillが見える。Cursor Cloud Agent、remote SSH、self-hosted workerにはローカルSkillが自動配布されない。必要ならCursorのSync Skillsを別途設定する。[Cursor Skills](https://prod.cursor.com/docs/skills)を参照。
+
 大きなタスクをAI coding agentへ渡す前に、token使用量、タスクの複雑さ、適切なmodel/laneを見積もる。
 
 ## 目的
@@ -287,12 +306,8 @@ python scripts/abr.py record `
 ### Cursorで使う
 
 ```bash
-# インストール
-git clone https://github.com/Mimuko/agent-budget-router.git \
-  ~/.cursor/skills/agent-budget-router
-
-# またはこのmonorepoからsymlinkを作成
-ln -s "$(pwd)/agent-budget-router" ~/.cursor/skills/agent-budget-router
+# 正式インストールは上記の install.ps1 を使う
+./install.ps1 install
 ```
 
 Cursor Agent chatで:
