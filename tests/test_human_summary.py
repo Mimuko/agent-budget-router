@@ -87,3 +87,5 @@ def test_missing_required_fields_lists_gaps():
     assert "forward" in missing
     no_allowed = {**case_a_skip(), "forward": {}}
     assert "forward.allowed" in missing_required_fields(no_allowed)
+    null_forward = {**case_a_skip(), "forward": None}
+    assert "forward.allowed" in missing_required_fields(null_forward)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 
@@ -51,6 +52,18 @@ TASK_CLASS_LABELS = {
 RECOMMENDATION_REASON_LABELS = {
     "budget_unavailable": "利用枠情報は未取得",
 }
+
+
+def ensure_utf8_stdio() -> None:
+    """Force stdout/stderr to UTF-8 so Japanese summary is readable across hosts."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError, AttributeError):
+            continue
 
 
 def missing_required_fields(result: dict[str, Any]) -> list[str]:
