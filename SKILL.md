@@ -1,94 +1,90 @@
 ---
 name: agent-budget-router
-description: 大きな Agent タスク投入前に、期待コンテキスト・複雑度・Go/Split/Defer・推奨 Lane を見積する FinOps Skill。Repository size ではなく Agent が実際に読む量を推定。親モデル切替や請求保証はしない。
+description: 明示的なSkill呼び出しで外部参照を解決し、タスク規模・予算・実行方針をpreflightして呼び出し元Agentへ返す。実装・Issue分割・Agent起動は行わない。
 ---
 
-# Agent Budget Router
+# agent-budget-router
 
-> **Estimate before you agent.**
+大きなタスクや外部Issue対応をAgentへ渡す前に、参照解決とABR preflightを行う論理共通Skill。
+Cursor、Codex、Orcaでは、それぞれのSkill配置形式・manifest・shimから明示的に呼び出す。
+物理的に同一packageをそのまま配布することは前提にしない。
 
-大きなタスクを Agent に投げる前に、**トークン見積・複雑度・推奨 Lane / モデル・予算リスク**を返す。単なるカウンターではなく、**投入判断（Go / Split / Defer）まで支援する**。
+## 正規の使い方
 
-正本: [references/estimation-rules.md](references/estimation-rules.md)  
-出力形式: [references/output-format.md](references/output-format.md)
-
-## 核心原則
+ユーザーまたは呼び出し元Agentが明示的に呼び出す。
 
 ```text
-Repository size  ≠  Expected agent context
+/agent-budget-router MY-172を実装して
 ```
 
-100万行 repo の CSS 1 枚修正と、20 ファイルの Plugin 横断再設計は同じ見積にしない。
+軽微な単一ファイル修正など、preflightが不要な作業ではSkillを省略してよい。
+transparent Hook、通常チャットの自動横取り、Agentの自動起動は正規経路ではない。
 
-## いつ使うか
+## Skillのワークフロー
 
-- 大規模・初回・予算不安があるタスクを Agent に渡す**前**
-- mimu-core routing-policy §7 の Lane 委譲**前**（任意）
-- 「このまま投げたら焼けるか？」を人間が判断したいとき
+1. 指示文を受け取る。
+2. Reference / Context Resolverを呼び出す。
+3. Resolverから`references`、`task_context`、`source_identity`、`resolution_status`を受け取る。
+4. `should_preflight()`を呼び、小規模なら`SKIP`として軽量に終了する。
+5. 必要な場合だけ`route()`を呼び、見積と実行方針を返す。
+6. `CONFIRM_FIRST`または`SPLIT`では確認要求を返す。
+7. 確認UI・入力は呼び出し元AgentまたはAgent別shimが担当する。
+8. 承認結果を同一workflowへ戻し、ResolverとABR判定を再検証してから`READY`を返す。
+9. 実装・実行は呼び出し元Agentが行う。
 
-## やること / やらないこと
+確認が必要な場合、shimは同じOrchestrator sessionを保持する。利用者の承認を受けたら、
+元のpromptとscopeを保ったまま`approved: true`を一度だけ返す。OrchestratorはLinearを再取得し、
+source identityとCore判定が初回と一致する場合だけ`READY / forward.allowed=true`にする。
+変更・不一致・取得失敗では転送を許可しない。承認は別のSkill呼び出しへ持ち越さない。
 
-| やる | やらない |
-|:-----|:---------|
-| Expected agent context のレンジ推定 | 親チャットのモデル自動切替 |
-| exploration multiplier 適用 | 請求 API 連携・正確な請求額保証 |
-| Go / Split / Defer の判断材料 | mimu-core / Client Plugin の業務判断代行 |
-| フェーズ分割と Lane 推奨 | workspace 全量のトークン化 |
+Skillはstdinで`y/N`を取得すること、コード変更、Issue分割、Agent / Model起動、Host固有UI操作を行わない。
+呼び出し元shimから共通Orchestratorへ渡すJSONL session protocolと、Cursor / Codex / Orcaの対応付けは
+[`shims/README.md`](shims/README.md)を参照する。
 
-## ワークフロー
+## 共通結果
 
-1. ユーザーのタスク説明を受け取る（必須）
-2. 任意: 対象パス・ファイル名のヒントを確認
-3. 任意: `python scripts/scan_workspace.py --root <workspace> --hint <path> --json` で関連ファイル候補を取得
-4. `python scripts/estimate.py` で見積を実行:
+共通結果は次の契約に従う。
 
-```bash
-python <skill>/scripts/estimate.py "タスク説明" \
-  --path-hint mimu-core/agents/ \
-  --skill-count 5 \
-  --scan-json /tmp/scan.json
+- `decision`: `SKIP | PREFLIGHT | INPUT_UNAVAILABLE`
+- `resolution_status`: `NO_REFERENCE | RESOLVED | PARTIALLY_RESOLVED | UNRESOLVED`
+- `state`: `READY | NEEDS_CONFIRMATION | BLOCKED`
+- `execution_policy`: `DIRECT | CONFIRM_FIRST | SPLIT | DEFER`
+
+`agent_action`は独立状態として返さず、呼び出し元Agentが`state`、`execution_policy`、
+`forward.allowed`から派生する。
+
+小規模タスクの例:
+
+```json
+{
+  "decision": "SKIP",
+  "resolution_status": "NO_REFERENCE",
+  "state": "READY",
+  "execution_policy": "DIRECT",
+  "forward": { "allowed": true }
+}
 ```
 
-5. [references/output-format.md](references/output-format.md) のテンプレで人間向けレポートを返す
-6. Verdict に従い、人間が Go / Split / Defer を決定
-7. **GO または Split 後**に routing-policy §7 の Lane 委譲へ進む
+確認が必要な例:
 
-## Verdict の扱い
+```json
+{
+  "decision": "PREFLIGHT",
+  "resolution_status": "RESOLVED",
+  "state": "NEEDS_CONFIRMATION",
+  "execution_policy": "CONFIRM_FIRST",
+  "forward": { "allowed": false }
+}
+```
 
-| Verdict | Agent の動き |
-|:--------|:-------------|
-| **GO** | 推奨 Lane で単一投入してよい見込み。スコープを 1 文で固定してから起動 |
-| **SPLIT_RECOMMENDED** | フェーズ分割を提案。Planning → analyst-planner、Execution → implementer、Review → cross-reviewer |
-| **DEFER** | 投入しない。タスク具体化・人間判断・調査先行を促す |
+## 正本リファレンス
 
-最終決定は常に人間。
+- [Skill責務・フロー](references/skill-contract.md)
+- [共通I/O・状態・policy](references/io-contract.md)
+- [Reference / Context Resolver](references/resolver-contract.md)
+- [Linear Backend](references/linear-backend.md)
+- [Migration / deprecated経路](references/migration.md)
+- [見積ルール](references/estimation-rules.md)
+- [実測スキーマ](references/measurement-schema.md)
 
-## 3 層との関係
-
-| レイヤー | 担当 | 質問 |
-|:---------|:-----|:-----|
-| **agent-budget-router** | 投入前 | どれくらい食う？予算内？分割すべき？ |
-| **routing-policy §7** | 投入後 | どの Lane / subagent に任せる？ |
-| **Skills** | 実行中 | 手順・出力・ガードレール |
-
-## カタログ
-
-- モデル本体: [catalog/models.default.yaml](catalog/models.default.yaml)
-- Lane 設定: [catalog/lanes.default.yaml](catalog/lanes.default.yaml)
-
-model / effort / speed は分離。未確認の合成 ID は生成しない。
-
-## 配布形態
-
-| 形態 | 内容 |
-|:-----|:-----|
-| **Cursor Skill MVP** | 本 SKILL + references + scripts + catalog |
-| **OpenAI Skill 互換** | 上記 + [agents/openai.yaml](agents/openai.yaml) |
-
-## 例
-
-- [examples/small-fix.md](examples/small-fix.md) — single-file / GO
-- [examples/feature-build.md](examples/feature-build.md) — known area / GO
-- [examples/large-agent-task.md](examples/large-agent-task.md) — architecture / SPLIT
-
-完了時は Verdict・complexity・context レンジ・推奨 phases を短く報告する。
+ABR履歴にはprompt本文、Issue本文、会話全文、ソースコード、認証情報を保存しない。

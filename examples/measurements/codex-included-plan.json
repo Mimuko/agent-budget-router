@@ -1,0 +1,9 @@
+{
+  "task_id": "my-180-sample-01",
+  "execution": "codex",
+  "completion": "completed",
+  "billing_mode": "included_plan",
+  "credit_units": 3,
+  "elapsed_minutes": 14,
+  "quality_score": 4.5
+}

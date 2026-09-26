@@ -380,21 +380,15 @@ def build_next_actions(verdict: str, complexity: str, phases: list[dict[str, Any
     ]
 
 
-def estimate(
+def estimate_task_size(
     task: str,
     *,
     path_hints: list[str] | None = None,
     skill_count: int = 0,
     budget_tight: bool = False,
     scan: dict[str, Any] | None = None,
-    catalog_dir: Path | None = None,
 ) -> dict[str, Any]:
-    catalog_dir = catalog_dir or ROOT / "catalog"
-    models_data = load_yaml_simple(catalog_dir / "models.default.yaml")
-    lanes_data = load_yaml_simple(catalog_dir / "lanes.default.yaml")
-    models = models_data.get("models", {})
-    lanes = lanes_data.get("lanes", {})
-
+    """Shared host-neutral sizing used by Skill v1 Core and the legacy report."""
     complexity_score = score_complexity(task)
     complexity = score_to_complexity(complexity_score)
     pattern = detect_exploration_pattern(task, complexity)
@@ -423,11 +417,7 @@ def estimate(
 
     confidence = compute_confidence(task, scan, path_hints)
     verdict = determine_verdict(complexity, ctx_max, budget_tight, confidence)
-    phases = build_phases(complexity, lanes, models)
     overhead = agent_overhead_label(pattern)
-    risks = build_budget_risks(complexity, pattern, skill_count, phases)
-    actions = build_next_actions(verdict, complexity, phases)
-
     return {
         "verdict": verdict,
         "complexity": complexity,
@@ -437,15 +427,41 @@ def estimate(
         "estimated_generation": {"min": gen_min, "max": gen_max},
         "exploration_factor": {"min": exp_min, "max": exp_max, "label": pattern},
         "agent_overhead": overhead,
-        "recommended_phases": phases,
-        "budget_risk": risks,
-        "next_actions": actions,
         "signals": {
             "complexity_score": complexity_score,
             "task_baseline": {"min": task_baseline[0], "max": task_baseline[1]},
             "relevant_files": {"min": rel_min, "max": rel_max},
             "skill_overhead": {"min": skill_overhead[0], "max": skill_overhead[1]},
         },
+    }
+
+
+def estimate(
+    task: str,
+    *,
+    path_hints: list[str] | None = None,
+    skill_count: int = 0,
+    budget_tight: bool = False,
+    scan: dict[str, Any] | None = None,
+    catalog_dir: Path | None = None,
+) -> dict[str, Any]:
+    catalog_dir = catalog_dir or ROOT / "catalog"
+    models_data = load_yaml_simple(catalog_dir / "models.default.yaml")
+    lanes_data = load_yaml_simple(catalog_dir / "lanes.default.yaml")
+    models = models_data.get("models", {})
+    lanes = lanes_data.get("lanes", {})
+    sized = estimate_task_size(
+        task, path_hints=path_hints, skill_count=skill_count,
+        budget_tight=budget_tight, scan=scan,
+    )
+    phases = build_phases(sized["complexity"], lanes, models)
+    return {
+        **sized,
+        "recommended_phases": phases,
+        "budget_risk": build_budget_risks(
+            sized["complexity"], sized["exploration_pattern"], skill_count, phases,
+        ),
+        "next_actions": build_next_actions(sized["verdict"], sized["complexity"], phases),
     }
 
 
