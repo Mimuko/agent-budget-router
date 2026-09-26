@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from codex_adapter import _environment, _root
+from codex_adapter import _environment, _core
 
 
 def _write_json(path: Path, value: dict) -> None:
@@ -21,7 +21,7 @@ def main() -> int:
     state_dir = Path(sys.argv[1])
     configuration = json.loads((state_dir / "configuration.json").read_text(encoding="utf-8"))
     child = subprocess.Popen(
-        [sys.executable, str(_root() / "agent-budget-router" / "scripts" / "skill_orchestrator.py"), "--session"],
+        [sys.executable, str(_core() / "scripts" / "skill_orchestrator.py"), "--session"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, encoding="utf-8", bufsize=1,
         env=_environment(configuration["linear_backend"]),

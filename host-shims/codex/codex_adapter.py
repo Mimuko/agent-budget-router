@@ -17,15 +17,17 @@ from typing import Any
 POLICY = {"input_unavailable": "ask", "reference_unresolved": "ask"}
 
 
-def _root() -> Path:
+def _core() -> Path:
     pointer = Path(__file__).resolve().parent.parent / ".abr-core-path"
     if pointer.is_file():
         core = Path(pointer.read_text(encoding="utf-8").strip())
         if (core / "scripts" / "skill_orchestrator.py").is_file():
-            return core.parent
+            return core
         raise RuntimeError(f"installed ABR core is missing: {core}")
     for parent in Path(__file__).resolve().parents:
         if (parent / "agent-budget-router" / "scripts" / "skill_orchestrator.py").is_file():
+            return parent / "agent-budget-router"
+        if (parent / "host-shims" / "codex" / "codex_adapter.py").is_file() and (parent / "scripts" / "skill_orchestrator.py").is_file():
             return parent
     raise RuntimeError("could not locate Skill v1 Orchestrator")
 
@@ -107,7 +109,7 @@ def resume_persistent_session(session_id: str, request: dict[str, Any], approved
 
 
 def _scripts_dir() -> Path:
-    return _root() / "agent-budget-router" / "scripts"
+    return _core() / "scripts"
 
 
 def _emit_result(result: dict[str, Any]) -> int:
@@ -129,7 +131,7 @@ def _emit_result(result: dict[str, Any]) -> int:
     diagnostic = {
         "time_utc": datetime.now(timezone.utc).isoformat(),
         "adapter": str(Path(__file__).resolve()),
-        "orchestrator": str(_root() / "agent-budget-router" / "scripts" / "skill_orchestrator.py"),
+        "orchestrator": str(_core() / "scripts" / "skill_orchestrator.py"),
         "decision": result.get("decision"),
         "resolution_status": result.get("resolution_status"),
         "state": result.get("state"),
@@ -167,7 +169,7 @@ def _emit(line: str) -> tuple[dict[str, Any], int]:
 
 def run_once(request: dict[str, Any], backend: str | None) -> int:
     completed = subprocess.run(
-        [sys.executable, str(_root() / "agent-budget-router" / "scripts" / "skill_orchestrator.py")],
+        [sys.executable, str(_core() / "scripts" / "skill_orchestrator.py")],
         input=json.dumps(request, ensure_ascii=True), capture_output=True,
         text=True, encoding="utf-8", check=False, env=_environment(backend),
     )
@@ -180,7 +182,7 @@ def run_once(request: dict[str, Any], backend: str | None) -> int:
 
 def run_session(request: dict[str, Any], backend: str | None, approved: bool, repeat: bool) -> int:
     child = subprocess.Popen(
-        [sys.executable, str(_root() / "agent-budget-router" / "scripts" / "skill_orchestrator.py"), "--session"],
+        [sys.executable, str(_core() / "scripts" / "skill_orchestrator.py"), "--session"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None,
         text=True, encoding="utf-8", bufsize=1, env=_environment(backend),
     )

@@ -17,15 +17,17 @@ from typing import Any
 DEFAULT_POLICY = {"input_unavailable": "ask", "reference_unresolved": "ask"}
 
 
-def _repo_root() -> Path:
+def _core() -> Path:
     pointer = Path(__file__).resolve().parent.parent / ".abr-core-path"
     if pointer.is_file():
         core = Path(pointer.read_text(encoding="utf-8").strip())
         if (core / "scripts" / "skill_orchestrator.py").is_file():
-            return core.parent
+            return core
         raise RuntimeError(f"installed ABR core is missing: {core}")
     for parent in Path(__file__).resolve().parents:
         if (parent / "agent-budget-router" / "scripts" / "skill_orchestrator.py").is_file():
+            return parent / "agent-budget-router"
+        if (parent / "host-shims" / "cursor" / "cursor_adapter.py").is_file() and (parent / "scripts" / "skill_orchestrator.py").is_file():
             return parent
     raise RuntimeError("could not locate agent-plugins root from Cursor Skill")
 
@@ -48,11 +50,11 @@ def _request(task: str, cwd: Path) -> dict[str, Any]:
 
 
 def _orchestrator() -> Path:
-    return _repo_root() / "agent-budget-router" / "scripts" / "skill_orchestrator.py"
+    return _core() / "scripts" / "skill_orchestrator.py"
 
 
 def _scripts_dir() -> Path:
-    return _repo_root() / "agent-budget-router" / "scripts"
+    return _core() / "scripts"
 
 
 def _emit_result(result: dict[str, Any]) -> int:

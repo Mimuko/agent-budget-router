@@ -11,14 +11,14 @@ import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ROOT / "agent-budget-router" / "scripts"
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from human_summary import format_human_summary  # noqa: E402
 
-CURSOR_ADAPTER = ROOT / ".cursor" / "skills" / "agent-budget-router" / "scripts" / "cursor_adapter.py"
-CODEX_ADAPTER = ROOT / ".agents" / "skills" / "agent-budget-router" / "scripts" / "codex_adapter.py"
+CURSOR_ADAPTER = ROOT / "host-shims" / "cursor" / "cursor_adapter.py"
+CODEX_ADAPTER = ROOT / "host-shims" / "codex" / "codex_adapter.py"
 
 
 def _load(name: str, path: Path):
